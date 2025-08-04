@@ -1,11 +1,13 @@
 /*
  * script.js - 前端逻辑文件
  * 所有后端文本处理逻辑已迁移至此
- * 已修复序号移除和标点符号问题
- * 已修复删除序号功能保留空行的问题
- * 已修复加换行符功能保持原有行结构的问题
- * 已修复文本分段功能在行内多个句子分段的问题，并保留原有序号
- * 已修复更彻底的全局空格清理问题
+ *
+ * 核心修复点：
+ * 1. 彻底解决一级/二级/两级序号功能中，首行以冒号结尾的“标题行”不加序号并保留冒号的问题。
+ * 2. 彻底解决所有带序号功能中，输入文本原有序号未被移除导致双重序号的问题。
+ * 3. 再次全面加强所有功能中的空格清理，涵盖所有已知Unicode空白字符。
+ * 4. 再次优化文本分段功能，确保一行内多序号分段的正确性，并保留原有序号。
+ * 5. 确保各功能函数间文本预处理（空格标准化）逻辑的一致性和精确性。
  */
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -152,132 +154,160 @@ function copyToClipboard(text) {
     showNotification('文本已复制！');
 }
 
-// ---- 文本处理功能函数 (从 app.py 移植到 JavaScript，并修复问题) ----
+// ---- 文本处理功能函数 ----
 
-// 更全面的空白字符匹配，包括常见的 Unicode 空白
-const WHITESPACE_REGEX = /[\s\uFEFF\xA0\u2000-\u200A\u202F\u205F\u3000]/g;
+// 全局定义更全面的空白字符集（用于字符类）
+// 包含 \s (标准空白), 零宽度字符, 不间断空格, Ogham Space Mark, 各种em/thin空格, 数学空格等
+const ALL_WHITESPACE_CHARS_SET = '\\s\\u200B\\u200C\\u200D\\uFEFF\\u00A0\\u1680\\u2000-\\u200A\\u202F\\u205F\\u3000'; 
 
-// 辅助函数：移除行开头可能存在的旧序号和多余空格
-// 这个函数用于那些需要彻底移除旧序号的功能
-function remove_leading_patterns(line) {
-    // 匹配并移除以下模式：
-    // 1. 数字序号，带括号或不带，带点或不带，后跟空格 (e.g., "1.", "(1)", "（1）", "1 ")
-    // 2. 带圈数字序号，后跟空格 (e.g., "①", "② ")
-    // 3. 字母序号，带点或不带，后跟空格 (e.g., "a.", "b ")
-    // 4. "第X条" 形式的序号 (e.g., "第1条", "第 2 条")
-    const pattern = new RegExp(`^${WHITESPACE_REGEX.source}*[\(\（]?\\d+[\)\）]?\\.?${WHITESPACE_REGEX.source}*|^${WHITESPACE_REGEX.source}*[\u2460-\u2473\u24EB-\u24F4]${WHITESPACE_REGEX.source}*|^${WHITESPACE_REGEX.source}*[a-zA-Z]\\.?${WHITESPACE_REGEX.source}*|^${WHITESPACE_REGEX.source}*第${WHITESPACE_REGEX.source}*\\d+${WHITESPACE_REGEX.source}*条?${WHITESPACE_REGEX.source}*`);
-    return line.replace(pattern, '').replace(WHITESPACE_REGEX, ' ').trim(); // 替换所有空白为单个空格，然后trim
+// 定义匹配零个或多个这类空白字符的字符串（用于构建正则表达式）
+const OPTIONAL_WHITESPACE_STR = `[${ALL_WHITESPACE_CHARS_SET}]*`;
+// 定义匹配一个或多个这类空白字符的字符串（用于构建正则表达式）
+const MANDATORY_WHITESPACE_STR = `[${ALL_WHITESPACE_CHARS_SET}]+`;
+
+// 全局正则表达式：用于替换一个或多个空白字符为单个空格 (或在某些情况下彻底移除)
+const WHITESPACE_TO_SINGLE_SPACE_REGEX = new RegExp(MANDATORY_WHITESPACE_STR, 'g');
+const WHITESPACE_TO_REMOVE_REGEX_ALL = new RegExp(MANDATORY_WHITESPACE_STR, 'g'); // 别名，用于彻底移除所有空格
+
+
+// 全局定义用于识别行首序号的基础正则表达式（无锚点，方便在Lookahead中使用）
+// 匹配: 1., (1), （1）, ①, a., 第1条
+const LEADING_NUMBER_PATTERN_BASE = '[\(\（]?\\d+[\\)\）]?\\.?|[\\u2460-\\u2473\\u24EB-\\u24F4]|[a-zA-Z]\\.?|第\\s*\\d+\\s*条?';
+// 全局定义用于匹配行首序号的完整正则表达式（带行首锚点和可选空白），用于删除或判断
+const LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX = new RegExp(`^${OPTIONAL_WHITESPACE_STR}(${LEADING_NUMBER_PATTERN_BASE})${OPTIONAL_WHITESPACE_STR}`);
+
+
+// 辅助函数：标准化文本中的所有空白字符为单个空格，并移除首尾空格
+function standardize_internal_whitespace_to_single(text) {
+    if (!text) return '';
+    return text.replace(WHITESPACE_TO_SINGLE_SPACE_REGEX, ' ').trim();
 }
 
-// 辅助函数：确保字符串以中文句号“。”结尾
+// 辅助函数：移除所有空白字符（包括各种Unicode空白和单词间的空格），使其紧密排列
+function remove_all_internal_whitespace(text) {
+    if (!text) return '';
+    return text.replace(WHITESPACE_TO_REMOVE_REGEX_ALL, '').trim();
+}
+
+// 辅助函数：移除行开头可能存在的旧序号和多余空格，并标准化剩余内容中的空格为单个空格
+function remove_leading_patterns_and_standardize_spaces(line) {
+    // 移除行开头的模式，并替换掉匹配到的部分
+    // 注意：这里使用replace而非replaceall，因为我们只关心行首的第一个匹配
+    let cleaned_line = line.replace(LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX, '');
+    // 对剩余部分进行内部空格标准化和两端去空白
+    return standardize_internal_whitespace_to_single(cleaned_line);
+}
+
+// 辅助函数：确保字符串以中文句号“。”结尾，并移除已存在的常见句末标点（包括冒号、分号）
 function ensure_chinese_period(text) {
     text = text.trim();
-    if (!text) return ''; // 如果是空字符串，直接返回空
+    if (!text) return '';
 
-    // 移除字符串末尾可能存在的任何英文或中文句末标点符号
-    text = text.replace(/[.,;!?。？！；]$/, '');
+    // 移除字符串末尾可能存在的任何英文或中文句末标点符号，包括冒号和分号
+    text = text.replace(/[.,;!?。？！；：]$/, '');
     // 添加中文句号
     text += '。';
     return text;
 }
 
-// 辅助函数：标准化文本中的所有空白字符为单个空格，并移除首尾空格
-// 此函数用于一般性的文本清理，不移除序号
-function standardize_internal_whitespace(text) {
-    return text.replace(WHITESPACE_REGEX, ' ').trim();
-}
 
-
-// 一级序号转换：转换为（1）（2）…格式
-function convert_level1_numbers(text) {
+// 统一处理带序号列表的辅助函数
+function process_numbered_list(text, number_format_type, is_two_level = false) {
     const lines = text.split('\n');
     const result_lines = [];
-    let current_num = 1;
+    let current_num_level1 = 1;
+    let current_num_level2 = 1;
+    let last_indent = 0; // 用于两级序号
+    let is_first_actual_content_line_checked = false; // 标记是否已经检查过第一个非空行是否为标题行
+
     for (let line of lines) {
-        let stripped_line = standardize_internal_whitespace(line); // 先标准化空格
-        if (stripped_line) {
-            // 1. 移除行开头可能存在的旧序号和多余空格
-            let cleaned_line = remove_leading_patterns(stripped_line);
-            // 2. 确保行末有句号
-            cleaned_line = ensure_chinese_period(cleaned_line);
-            result_lines.push(`（${current_num}）${cleaned_line}`);
-            current_num += 1;
+        let original_line_for_indent = line; // 保留原始行用于计算缩进
+        // 对当前行进行初步的空格标准化
+        let processed_line_content_standardized = standardize_internal_whitespace_to_single(line);
+
+        if (!processed_line_content_standardized) {
+            continue; // 跳过空行（标准化后仍为空的行）
+        }
+
+        // --- 首行特殊处理逻辑 (仅在第一次遇到非空行时执行) ---
+        if (!is_first_actual_content_line_checked) {
+            // 先尝试移除该行可能带有的（如“（1）”）序号，得到一个“更纯净”的内容来判断是否为标题行
+            let content_without_leading_num_for_check = remove_leading_patterns_and_standardize_spaces(processed_line_content_standardized);
+            
+            // 如果这个“更纯净”的内容以中文冒号‘：’结尾（且长度大于1，避免只有冒号的空行），
+            // 并且原始行（或其标准化版本）不以可识别的序号开头 (避免把1.标题：当成标题行)
+            // 注意：这里需要检查原始行是否以序号开头，以区分“联系方式：”和“1.标题：”
+            let starts_with_recognizable_number = LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX.test(processed_line_content_standardized);
+
+            if (!starts_with_recognizable_number && content_without_leading_num_for_check.endsWith('：') && content_without_leading_num_for_check.length > 1) {
+                // 这是一个符合条件的“标题行”
+                result_lines.push(processed_line_content_standardized); // 直接添加，保留原有冒号，不加新序号
+                is_first_actual_content_line_checked = true; // 标记已处理第一个有内容的行
+                continue; // 跳过此行的序号添加逻辑
+            }
+            is_first_actual_content_line_checked = true; // 如果不是标题行，也标记已检查，后续正常编号
+        }
+
+        // --- 正常编号逻辑 (适用于非标题行或首行非标题行) ---
+        // 移除行开头可能存在的旧序号和多余空格，并标准化内部空格
+        let cleaned_content_for_numbering = remove_leading_patterns_and_standardize_spaces(processed_line_content_standardized);
+        // 确保行末有句号 (这里会处理掉冒号，因为这不是标题行)
+        cleaned_content_for_numbering = ensure_chinese_period(cleaned_content_for_numbering);
+
+        if (is_two_level) {
+            const current_indent_match = original_line_for_indent.match(/^\s*/); // 使用原始行计算缩进
+            const current_indent = current_indent_match ? current_indent_match[0].length : 0;
+
+            if (current_indent === 0) { // 一级标题 (无缩进)
+                result_lines.push(`（${current_num_level1}）${cleaned_content_for_numbering}`);
+                current_num_level1 += 1;
+                current_num_level2 = 1; // 重置二级序号
+            } else { // 二级标题 (有缩进)
+                const circled_num = current_num_level2 <= 20 ? String.fromCharCode(0x2460 + current_num_level2 - 1) : `[${current_num_level2}]`;
+                result_lines.push(`${' '.repeat(current_indent)}${circled_num}${cleaned_content_for_numbering}`);
+                current_num_level2 += 1;
+            }
+            last_indent = current_indent; // 更新上一次的缩进值
+        } else { // 单级序号 (一级或二级)
+            if (number_format_type === 'level1') {
+                result_lines.push(`（${current_num_level1}）${cleaned_content_for_numbering}`);
+                current_num_level1 += 1;
+            } else if (number_format_type === 'level2') {
+                const circled_num = current_num_level1 <= 20 ? String.fromCharCode(0x2460 + current_num_level1 - 1) : `[${current_num_level1}]`;
+                result_lines.push(`${circled_num}${cleaned_content_for_numbering}`);
+                current_num_level1 += 1;
+            }
         }
     }
     return result_lines.join('\n');
+}
+
+// 一级序号转换：转换为（1）（2）…格式
+function convert_level1_numbers(text) {
+    return process_numbered_list(text, 'level1');
 }
 
 // 二级序号转换：转换为①②③…格式
 function convert_level2_numbers(text) {
-    const lines = text.split('\n');
-    const result_lines = [];
-    let current_num = 1;
-    for (let line of lines) {
-        let stripped_line = standardize_internal_whitespace(line); // 先标准化空格
-        if (stripped_line) {
-            // 1. 移除行开头可能存在的旧序号和多余空格
-            let cleaned_line = remove_leading_patterns(stripped_line);
-            // 2. 确保行末有句号
-            cleaned_line = ensure_chinese_period(cleaned_line);
-
-            // 3. 添加新的带圈数字序号
-            const circled_num = current_num <= 20 ? String.fromCharCode(0x2460 + current_num - 1) : `[${current_num}]`; // Unicode 带圈数字
-            result_lines.push(`${circled_num}${cleaned_line}`);
-            current_num += 1;
-        }
-    }
-    return result_lines.join('\n');
+    return process_numbered_list(text, 'level2');
 }
 
 // 两级序号转换：一级（1）（2）...，二级①②...
 function convert_two_level_numbers(text) {
-    const lines = text.split('\n');
-    const result_lines = [];
-    let level1_num = 1;
-    let level2_num = 1;
-    let last_indent = 0; // 用于判断缩进级别
-
-    for (let line of lines) {
-        let standardized_line = standardize_internal_whitespace(line); // 先标准化空格
-        const current_indent_match = line.match(/^\s*/); // 匹配原始行的缩进
-        const current_indent = current_indent_match ? current_indent_match[0].length : 0;
-        const stripped_line_for_content = standardized_line; // 已经标准化过空格的行
-
-        if (!stripped_line_for_content) {
-            continue;
-        }
-
-        // 移除行开头可能存在的旧序号和多余空格，以获取纯净内容用于序号添加
-        let cleaned_content = remove_leading_patterns(stripped_line_for_content);
-        // 确保行末有句号
-        cleaned_content = ensure_chinese_period(cleaned_content);
-
-        if (current_indent === 0) { // 一级标题 (无缩进)
-            result_lines.push(`（${level1_num}）${cleaned_content}`);
-            level1_num += 1;
-            level2_num = 1; // 重置二级序号
-        } else if (current_indent > last_indent) { // 二级标题 (比上一行缩进更深)
-            const circled_num = level2_num <= 20 ? String.fromCharCode(0x2460 + level2_num - 1) : `[${level2_num}]`;
-            result_lines.push(`${' '.repeat(current_indent)}${circled_num}${cleaned_content}`);
-            level2_num += 1;
-        } else { // 同级或回退 (如果缩进相同或减少，但不是0，则认为是二级序号)
-            const circled_num = level2_num <= 20 ? String.fromCharCode(0x2460 + level2_num - 1) : `[${level2_num}]`;
-            result_lines.push(`${' '.repeat(current_indent)}${circled_num}${cleaned_content}`);
-            level2_num += 1;
-        }
-        last_indent = current_indent; // 更新上一次的缩进值
-    }
-    return result_lines.join('\n');
+    return process_numbered_list(text, 'twolevel', true);
 }
+
 
 // 删除序号：移除所有序号和行首空格，并确保每段之间空一行
 function delete_numbers(text) {
     let lines = text.split('\n');
     const processed_lines = [];
     for (let line of lines) {
-        let stripped_line = standardize_internal_whitespace(line); // 先标准化空格
+        // 对当前行进行初步的空格标准化
+        let stripped_line = standardize_internal_whitespace_to_single(line);
         if (stripped_line) { // 只处理非空行
-            let cleaned_line = remove_leading_patterns(stripped_line);
+            // 移除序号和行首空格，并标准化内部空格
+            let cleaned_line = remove_leading_patterns_and_standardize_spaces(stripped_line);
             processed_lines.push(cleaned_line);
         }
     }
@@ -290,7 +320,8 @@ function add_br_tags(text) {
     const lines = text.split('\n'); // 按照原始换行符分割
     const result_lines = [];
     for (let line of lines) {
-        let stripped_line = standardize_internal_whitespace(line); // 先标准化空格
+        // 对当前行进行初步的空格标准化
+        let stripped_line = standardize_internal_whitespace_to_single(line);
         if (stripped_line) { // 只处理非空行
             // 确保句末有中文句号，然后追加 <br>
             // 此功能不移除行首的序号或前缀，因为用户示例中要求保留原始行结构和内容
@@ -305,31 +336,34 @@ function add_br_tags(text) {
 
 // 文本分段：根据句末标点和/或序号模式分段，并保留原始序号
 function segment_text(text) {
-    // 1. 先将所有换行符替换为空格，并彻底标准化所有空白字符为单个空格
-    let cleaned_text = text.replace(/[\n\r]+/g, ' ').replace(WHITESPACE_REGEX, ' ').trim();
+    // 1. 将所有换行符替换为单个空格，并彻底标准化所有空白字符为单个空格
+    // 这一步是为了将所有文本视为一个长字符串，以便进行基于正则表达式的精确分段
+    let cleaned_text_for_segmenting = text.replace(/[\n\r]+/g, ' ').replace(WHITESPACE_TO_SINGLE_SPACE_REGEX, ' ').trim();
 
-    if (!cleaned_text) {
+    if (!cleaned_text_for_segmenting) {
         return '';
     }
 
-    // 2. 定义用于识别序号的正则表达式（与remove_leading_patterns中的模式相同，但这里用于匹配而非替换）
-    const leading_number_pattern_for_split = /[\(\（]?\d+[\)\）]?\.?|[\u2460-\u2473\u24EB-\u24F4]|[a-zA-Z]\.?|第\s*\d+\s*条?/;
+    // 2. 定义分段的正则表达式：
+    // 在句号、问号、叹号、分号或冒号之后，如果紧跟着可选空白和一个序号模式，则在此处分段。
+    // 使用Lookbehind (?<=[。？！；：]) 确保标点留在前一个句子中。
+    // 使用Lookahead (?=${OPTIONAL_WHITESPACE_STR}${LEADING_NUMBER_PATTERN_BASE}) 确保序号模式是分段的依据，但序号本身不被分割掉。
+    const segment_split_regex = new RegExp(
+        `(?<=[。？！；：])${OPTIONAL_WHITESPACE_STR}(?=${LEADING_NUMBER_PATTERN_BASE})`, 'g'
+    );
 
-    // 3. 定义分段的正则表达式：在句号、问号、叹号、分号之后，如果紧跟着一个序号模式，则在此处分段
-    // 使用lookbehind确保标点留在前一个句子中
-    // 使用lookahead确保序号模式是分段的依据，但序号本身不被分割掉
-    const segment_split_regex = new RegExp(`(?<=[。？！；])${WHITESPACE_REGEX.source}*(?=${leading_number_pattern_for_split.source})`, 'g');
-
-    let segments = cleaned_text.split(segment_split_regex);
+    let segments = cleaned_text_for_segmenting.split(segment_split_regex);
     const result_segments = [];
 
     for (let segment of segments) {
-        segment = segment.trim();
+        // 对每个分段再次进行空格标准化，以防 split 产生额外的空白
+        segment = standardize_internal_whitespace_to_single(segment); 
         if (segment) {
             // 对于每个分段，确保其以中文句号结尾
             result_segments.push(ensure_chinese_period(segment));
         }
     }
+    // 使用 \n 连接，使每个分段独立成行
     return result_segments.join('\n');
 }
 
@@ -340,20 +374,19 @@ function smart_process_text(text) {
     const processed_lines = [];
 
     // 检查文本中是否包含任何识别的序号或前缀
-    const leading_number_pattern_test = new RegExp(`^${WHITESPACE_REGEX.source}*[\(\（]?\\d+[\)\）]?\\.?${WHITESPACE_REGEX.source}*|^${WHITESPACE_REGEX.source}*[\u2460-\u2473\u24EB-\u24F4]${WHITESPACE_REGEX.source}*|^${WHITESPACE_REGEX.source}*[a-zA-Z]\\.?${WHITESPACE_REGEX.source}*|^${WHITESPACE_REGEX.source}*第${WHITESPACE_REGEX.source}*\\d+${WHITESPACE_REGEX.source}*条?${WHITESPACE_REGEX.source}*`);
-    const has_prefixes = lines.some(line => line.trim() && leading_number_pattern_test.test(line));
+    const has_prefixes = lines.some(line => line.trim() && LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX.test(line));
 
     if (has_prefixes) {
         // 包含序号：逐行处理，移除旧序号，添加标准化的（1）（2）…序号，并统一句末句号
         let current_num = 1;
         for (let line of lines) {
-            // 统一行内空白，并移除行首尾空白
-            let cleaned_line_for_processing = line.replace(WHITESPACE_REGEX, ' ').trim(); 
+            // 先对输入行进行初步的空格标准化
+            let cleaned_line_for_processing = standardize_internal_whitespace_to_single(line);
             if (!cleaned_line_for_processing) {
                 continue;
             }
-            // 1. 移除行开头可能存在的旧序号和多余空格
-            let cleaned_content = remove_leading_patterns(cleaned_line_for_processing); 
+            // 1. 移除行开头可能存在的旧序号和多余空格，并标准化内部空格
+            let cleaned_content = remove_leading_patterns_and_standardize_spaces(cleaned_line_for_processing); 
             // 2. 添加新的（N）序号
             let standardized_line = `（${current_num}）${cleaned_content}`;
             // 3. 确保行末是中文句号
@@ -362,14 +395,12 @@ function smart_process_text(text) {
             current_num += 1;
         }
     } else {
-        // 不包含序号：将所有内容视为一个连续段落，全局去除非必要空格，按句子分割，并统一句末句号
-        // 1. 将所有非空行合并成一个字符串，并去除所有空白
+        // 不包含序号：将所有内容视为一个连续段落，全局去除非必要空格（彻底移除），按句子分割，并统一句末句号
+        // 1. 将所有非空行合并成一个字符串，并彻底去除所有空白（包括单词间的）
         let full_text = lines.filter(line => line.trim()).map(line => line.trim()).join(''); // 合并时直接不留空格
-        // 2. 移除字符串中所有剩余的空白字符（包括各种Unicode空白），使其紧密排列
-        full_text = full_text.replace(WHITESPACE_REGEX, '').trim(); 
+        full_text = remove_all_internal_whitespace(full_text); // 再次确保彻底移除所有空白
 
-        // 3. 按中文句号、问号、叹号、分号分割句子，并保留分隔符
-        // 这里只是为了将文本按照中文句末标点拆分，以便每个“句子”都能被 ensure_chinese_period 处理
+        // 2. 按中文句号、问号、叹号、分号分割句子，并保留分隔符
         const sentences = full_text.split(/(?<=[。？！；])/g);
 
         for (let sentence of sentences) {
@@ -385,7 +416,7 @@ function smart_process_text(text) {
 }
 
 
-// 处理文本转换的通用函数 (现在直接调用本地JS函数，不再发送网络请求)
+// 处理文本转换的通用函数
 function processText(tabId) {
     const inputTextarea = document.getElementById(`input_text_${tabId}`);
     const outputTextarea = document.getElementById(`output_text_${tabId}`);
@@ -397,7 +428,6 @@ function processText(tabId) {
     }
 
     let result = '';
-    let success = true;
     try {
         switch (tabId) {
             case 'level1':
@@ -423,18 +453,13 @@ function processText(tabId) {
                 break;
             default:
                 result = '未知功能。';
-                success = false;
-                break;
+                showNotification(result);
+                return;
         }
-        if (success) {
-            outputTextarea.value = result;
-            showNotification('转换成功！');
-        } else {
-            showNotification(result); // 显示未知功能提示
-        }
+        outputTextarea.value = result;
+        showNotification('转换成功！');
     } catch (error) {
-        console.error('处理失败:', error);
-        showNotification('处理失败，请检查输入格式。');
-        success = false;
+        console.error('处理失败:', error); // 打印详细错误信息到控制台
+        showNotification('处理失败，请检查输入格式或联系开发者。');
     }
 }
