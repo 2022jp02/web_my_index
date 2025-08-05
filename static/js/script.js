@@ -548,38 +548,41 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
     // It's checked *per function call*.
     let single_level_first_line_title_exception_applied_for_this_call = false; 
 
-    // For `is_two_level_requested = true`, we directly apply the two-level rules line by line,
-    // and do not force unnumbered lines into L1.
-    // The `number_format_type` parameter is effectively ignored when `is_two_level_requested` is true,
-    // as the numbering format is determined by L1/L2 logic. It's only relevant for single-level modes.
-
     for (let i = 0; i < lines.length; i++) {
         const original_line = lines[i];
-        let trimmed_line = original_line.trim();
+        // 关键改动：使用 standardize_internal_whitespace_to_single 来处理行，
+        // 并且如果处理后为空（即原行是空行或仅包含空白字符），则直接跳过，不添加到结果中。
+        let processed_line_content_standardized = standardize_internal_whitespace_to_single(original_line);
 
-        if (!trimmed_line) {
-            result_lines.push(''); // Preserve empty lines
-            continue; 
+        if (!processed_line_content_standardized) {
+            console.log(`Line ${i+1}: Empty or all whitespace, skipping.`); // Debug
+            continue; // 跳过空行，不将其添加到结果数组中
         }
 
         console.groupCollapsed(`--- Processing Line ${i+1} ---`); // Group console logs
         console.log(`Original: "${original_line}"`);
-        console.log(`Trimmed: "${trimmed_line}"`);
+        console.log(`Standardized: "${processed_line_content_standardized}"`);
         console.log(`is_two_level_requested: ${is_two_level_requested}`);
         console.log(`current_num_level1 (before): ${current_num_level1}`);
         console.log(`current_num_level2 (before): ${current_num_level2}`);
 
         if (is_two_level_requested) { 
             // --- NEW Complex Two-Level Logic for "两级序号" tab ---
+            const current_indent = original_line.match(/^\s*/)[0].length; // 用于判断缩进
+
             // 精确判断当前行是否符合一级或二级序号的模式
+            // 注意：这里使用 original_line 来检测模式，因为它包含原始的缩进和前缀
             let is_level1_pattern_found = LEVEL1_CANDIDATE_PATTERNS.some(p => p.test(original_line));
             let is_level2_pattern_found = LEVEL2_CANDIDATE_PATTERNS.some(p => p.test(original_line));
             
             // 无论是否重新编号，都先对内容进行标准化处理（移除旧序号、标准化内部空白）
+            // 这里使用 original_line 是因为 remove_leading_patterns_and_standardize_spaces_smart
+            // 内部会调用 standardize_internal_whitespace_to_single 并处理行首模式。
             let cleaned_content = remove_leading_patterns_and_standardize_spaces_smart(original_line);
             
             if (is_level1_pattern_found) {
                 // 如果当前行识别为一级序号模式，则重新编号为（1）（2）...
+                // 确保句末标点标准化
                 const final_content = standardize_end_punctuation_for_numbered_items(cleaned_content);
                 result_lines.push(`（${current_num_level1}）${final_content}`);
                 current_num_level1++;
@@ -589,6 +592,7 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
                 // 如果当前行识别为二级序号模式，则重新编号为①②...
                 const circled_num = current_num_level2 <= 20 ? String.fromCharCode(0x2460 + current_num_level2 - 1) : `[${current_num_level2}]`;
                 // 仅添加序号，不额外增加缩进（根据用户示例）
+                // 确保句末标点标准化
                 const final_content = standardize_end_punctuation_for_numbered_items(cleaned_content);
                 result_lines.push(`${circled_num}${final_content}`); 
                 current_num_level2++;
@@ -596,14 +600,14 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
             } else {
                 // 如果当前行不符合任何一级或二级序号模式，则按原样输出（仅标准化空白）
                 // 不赋新序号，不强制添加句号。
-                result_lines.push(standardize_internal_whitespace_to_single(original_line));
+                // 注意：这里直接使用 processed_line_content_standardized，因为它已经移除了旧序号（如果存在）并标准化了内部空白
+                result_lines.push(processed_line_content_standardized);
                 // 非序号行不影响计数器
-                console.log(`Output as plain text (no numbering): "${standardize_internal_whitespace_to_single(original_line)}"`);
+                console.log(`Output as plain text (no numbering): "${processed_line_content_standardized}"`);
             }
 
         } else { // Original Single level numbering logic (for 'level1' and 'level2' tabs)
             // 这部分逻辑保持不变，因为用户未要求修改一级序号和二级序号的功能。
-            let processed_line_content_standardized = standardize_internal_whitespace_to_single(original_line);
             
             // 特殊处理单级模式下首行是标题的情况
             const is_current_line_numbered_any_format = LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX.test(original_line) || LEADING_YEAR_PATTERN_REGEX.test(original_line); 
