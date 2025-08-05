@@ -1,40 +1,59 @@
-*script.js - 前端逻辑文件
-
-
 console.log('Script file loading...'); // Debug: Script file is being parsed
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM Content Loaded event fired. Script execution started.'); // Debug: DOM ready
 
-    // 初始化第一个Tab为激活状态
-    var firstTabEl = document.querySelector('#v-pills-tab button:first-child')
-    var firstTab = new bootstrap.Tab(firstTabEl)
-    firstTab.show()
-
-    // 加载快捷复制文本
-    renderQuickCopyArea(PRESET_QUICK_COPY_TEXTS);
-
-    // 初始化PlaceholderText
-    document.querySelectorAll('.placeholder-text').forEach(textarea => {
-        const placeholder = textarea.getAttribute('placeholder');
-        if (!textarea.value.trim()) {
-            textarea.value = placeholder;
-            textarea.classList.add('placeholder-active');
+    try {
+        // 关键检查：确保 Bootstrap JavaScript 已经加载并可用
+        if (typeof bootstrap === 'undefined' || typeof bootstrap.Tab === 'undefined' || typeof bootstrap.Toast === 'undefined' || typeof bootstrap.Modal === 'undefined') {
+            console.error("错误：Bootstrap JavaScript 未加载或初始化成功。请检查 './static/js/bootstrap.bundle.min.js' 路径是否正确且文件未损坏。");
+            showNotification("初始化失败：核心组件缺失。请检查浏览器控制台（F12）获取详情。");
+            return; // 如果 Bootstrap 未正确加载，则停止进一步的脚本执行
         }
-        textarea.addEventListener('focus', () => {
-            if (textarea.classList.contains('placeholder-active')) {
-                textarea.value = '';
-                textarea.classList.remove('placeholder-active');
-            }
-        });
-        textarea.addEventListener('blur', () => {
+        
+        // 初始化第一个Tab为激活状态
+        var firstTabEl = document.querySelector('#v-pills-tab button:first-child')
+        if (firstTabEl) {
+            var firstTab = new bootstrap.Tab(firstTabEl)
+            firstTab.show()
+            console.log('First tab activated successfully.');
+        } else {
+            console.warn('警告：未找到第一个导航Tab按钮，可能导致页面初始化异常。');
+        }
+
+        // 加载快捷复制文本
+        renderQuickCopyArea(PRESET_QUICK_COPY_TEXTS);
+        console.log('Quick copy area rendered.');
+
+        // 初始化PlaceholderText
+        document.querySelectorAll('.placeholder-text').forEach(textarea => {
+            const placeholder = textarea.getAttribute('placeholder');
+            // 只有当文本框为空时才设置placeholder样式和值
             if (!textarea.value.trim()) {
                 textarea.value = placeholder;
                 textarea.classList.add('placeholder-active');
             }
+            textarea.addEventListener('focus', () => {
+                if (textarea.classList.contains('placeholder-active')) {
+                    textarea.value = '';
+                    textarea.classList.remove('placeholder-active');
+                }
+            });
+            textarea.addEventListener('blur', () => {
+                if (!textarea.value.trim()) {
+                    textarea.value = placeholder;
+                    textarea.classList.add('placeholder-active');
+                }
+            });
         });
-    });
-    console.log('Initial setup complete. Buttons should be clickable now.'); // Debug: Initial setup done
+        console.log('Placeholder text setup complete.');
+        console.log('Initial setup complete. Buttons should be clickable now.'); // Debug: Initial setup done
+
+    } catch (e) {
+        // 捕获 DOMContentLoaded 内部的任何错误
+        console.error("JavaScript初始化过程中发生未捕获的错误：", e);
+        showNotification("页面初始化检测到问题，请查看浏览器控制台（F12）获取详情。");
+    }
 });
 
 // 显示 Toast 通知 (用于一般性短暂提示)
@@ -53,6 +72,12 @@ function showNotification(message) {
     toastMessageElement.textContent = message;
     
     // 确保每次都创建一个新的 Toast 实例，并显示
+    // 销毁旧实例并创建新实例，以确保每次都能显示
+    const existingToast = bootstrap.Toast.getInstance(toastLiveExample);
+    if (existingToast) {
+        existingToast.dispose();
+    }
+
     const toast = new bootstrap.Toast(toastLiveExample, {
         delay: 3000 // 延迟3秒自动隐藏
     });
@@ -73,7 +98,9 @@ function showKeywordAlertModal(message) {
         console.error("错误：未找到关键字模态对话框的 body 元素！请检查 index.html 中是否存在 id为 'keywordAlertModalBody' 的元素。");
         return;
     }
-    const keywordAlertModal = new bootstrap.Modal(document.getElementById('keywordAlertModal'));
+    // 确保每次都创建一个新的 Modal 实例
+    const keywordAlertModalElement = document.getElementById('keywordAlertModal');
+    const keywordAlertModal = new bootstrap.Modal(keywordAlertModalElement);
     keywordAlertModal.show();
     console.log("关键字模态对话框已尝试显示。"); // Debug:确认 show() 被调用
 }
@@ -84,13 +111,21 @@ function clearInput(tabId) {
     const inputTextarea = document.getElementById(`input_text_${tabId}`);
     const outputTextarea = document.getElementById(`output_text_${tabId}`);
 
-    inputTextarea.value = '';
-    outputTextarea.value = '';
+    if (inputTextarea) {
+        inputTextarea.value = '';
+        // 重新设置 placeholder 样式
+        const placeholder = inputTextarea.getAttribute('placeholder');
+        inputTextarea.value = placeholder;
+        inputTextarea.classList.add('placeholder-active');
+    } else {
+        console.warn(`清空操作：未找到 id 为 input_text_${tabId} 的输入框`);
+    }
 
-    // 重新设置 placeholder 样式
-    const placeholder = inputTextarea.getAttribute('placeholder');
-    inputTextarea.value = placeholder;
-    inputTextarea.classList.add('placeholder-active');
+    if (outputTextarea) {
+        outputTextarea.value = '';
+    } else {
+        console.warn(`清空操作：未找到 id 为 output_text_${tabId} 的输出框`);
+    }
 
     showNotification('已清空');
 }
@@ -98,6 +133,11 @@ function clearInput(tabId) {
 // **NEW:** 粘贴文本到输入框
 async function pasteInput(tabId) {
     const inputTextarea = document.getElementById(`input_text_${tabId}`);
+    if (!inputTextarea) {
+        console.error(`粘贴失败：未找到 id 为 input_text_${tabId} 的输入框`);
+        showNotification('粘贴失败：目标输入框不存在。');
+        return;
+    }
     try {
         // 使用 navigator.clipboard.readText() 需要用户授予权限或在安全上下文 (https) 中运行
         const text = await navigator.clipboard.readText();
@@ -120,10 +160,16 @@ async function pasteInput(tabId) {
 function copyOutput(tabId) {
     const inputTextarea = document.getElementById(`input_text_${tabId}`); // 获取输入框
     const outputTextarea = document.getElementById(`output_text_${tabId}`); // 获取输出框
-    let inputText = inputTextarea.value;
+    
+    if (!outputTextarea) {
+        console.error(`复制失败：未找到 id 为 output_text_${tabId} 的输出框`);
+        showNotification('复制失败：目标输出框不存在。');
+        return;
+    }
 
+    let inputText = inputTextarea ? inputTextarea.value : ''; // 确保 inputTextarea 存在
     // 如果输入框当前显示的是 placeholder 文本，则不进行关键字检查
-    if (inputTextarea.classList.contains('placeholder-active')) {
+    if (inputTextarea && inputTextarea.classList.contains('placeholder-active')) {
         inputText = ''; 
     }
 
@@ -177,6 +223,10 @@ const PRESET_QUICK_COPY_TEXTS = [
 
 function renderQuickCopyArea(texts) {
     const quickCopyArea = document.getElementById('quick_copy_area');
+    if (!quickCopyArea) {
+        console.error("错误：未找到快捷复制区域元素！请检查 index.html 中是否存在 id为 'quick_copy_area' 的元素。");
+        return;
+    }
     quickCopyArea.innerHTML = ''; // 清空现有内容
 
     if (texts && texts.length > 0) {
@@ -209,13 +259,45 @@ function renderQuickCopyArea(texts) {
 }
 
 function copyToClipboard(text) {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand('copy');
-    document.body.removeChild(textarea);
-    showNotification('文本已复制！');
+    // 使用 Clipboard API 替代 execCommand，更现代且支持 promise
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+            showNotification('文本已复制！');
+        }).catch(err => {
+            console.error('复制到剪贴板失败:', err);
+            // Fallback if writeText fails due to permissions or other issues
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed'; // Avoid scrolling to bottom
+            textarea.style.opacity = '0'; // Make it invisible
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                showNotification('文本已复制！');
+            } catch (execErr) {
+                console.error('execCommand 复制失败:', execErr);
+                showNotification('复制失败，请手动复制。');
+            } finally {
+                document.body.removeChild(textarea);
+            }
+        });
+    } else {
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            showNotification('文本已复制！');
+        } catch (execErr) {
+            console.error('execCommand 复制失败:', execErr);
+            showNotification('复制失败，请手动复制。');
+        } finally {
+            document.body.removeChild(textarea);
+        }
+    }
 }
 
 // ---- 文本处理辅助函数和常量 ----
@@ -505,7 +587,6 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
         // If actual_two_level_conversion_needed remains true, it means both L1 and L2 patterns were detected, so proceed with complex two-level logic.
     }
 
-
     for (let i = 0; i < lines.length; i++) {
         const original_line = lines[i];
         let processed_line_content_standardized = standardize_internal_whitespace_to_single(original_line);
@@ -767,11 +848,22 @@ function smart_process_text(text) {
 function processText(tabId) {
     const inputTextarea = document.getElementById(`input_text_${tabId}`);
     const outputTextarea = document.getElementById(`output_text_${tabId}`);
+
+    if (!inputTextarea || !outputTextarea) {
+        console.error(`处理失败：未找到 id 为 input_text_${tabId} 或 output_text_${tabId} 的文本区域。`);
+        showNotification('处理失败：输入/输出框缺失。');
+        return;
+    }
+
     let inputText = inputTextarea.value;
 
     // 如果当前显示的是 placeholder 文本，则不提交
     if (inputTextarea.classList.contains('placeholder-active')) {
         inputText = ''; // 清空placeholder内容，避免处理
+    } else if (!inputText.trim()) {
+        showNotification('输入内容为空，无需转换。');
+        outputTextarea.value = ''; // 清空输出
+        return;
     }
 
     let result = '';
@@ -804,6 +896,6 @@ function processText(tabId) {
         showNotification('转换成功！'); // 这里会显示转换成功的 Toast
     } catch (error) {
         console.error('处理失败:', error); // 打印详细错误信息到控制台
-        showNotification('处理失败，请检查输入格式或联系开发者。');
+        showNotification('处理失败，请检查输入格式或联系开发者。详情请查看控制台。');
     }
 }
