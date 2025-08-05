@@ -11,17 +11,23 @@
 </head>
 <body>
     <!-- Toast 通知容器 - 放置在页面顶部中央，用于显示操作提示 -->
-    <div class="toast-container position-fixed top-0 start-50 translate-middle-x p-3" style="z-index: 1080;">
-        <div id="liveToast" class="toast hide" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="2000">
-            <div class="toast-header">
-                <strong class="me-auto text-primary">提示</strong>
-                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+<!-- Keyword Alert Modal -->
+<div class="modal fade" id="keywordAlertModal" tabindex="-1" aria-labelledby="keywordAlertModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="keywordAlertModalLabel">提示</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="toast-body" id="toast-message">
-                <!-- 提示信息将在此处显示 -->
+            <div class="modal-body" id="keywordAlertModalBody">
+                <!-- 提示消息将注入到这里 -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">确认关闭</button>
             </div>
         </div>
     </div>
+</div>
 
     <!-- 整体容器，h-100表示高度100%，d-flex flex-column使其内容垂直排列 -->
     <div class="container-fluid h-100 d-flex flex-column">
