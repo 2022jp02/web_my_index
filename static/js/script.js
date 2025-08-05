@@ -1,27 +1,5 @@
-/*
- * script.js - 前端逻辑文件
- * 所有后端文本处理逻辑已迁移至此
- *
- * 核心修复点：
- * 1. 修复致命语法错误，解决"所有按钮无法点击"的问题。
- * 2. 彻底解决一级/二级/两级序号功能中，首行以冒号结尾的“标题行”不加序号并保留冒号的问题。
- * 3. 彻底解决所有带序号功能中，输入文本原有序号未被移除导致双重序号的问题。
- * 4. 再次全面加强所有功能中的空格清理，涵盖所有已知Unicode空白字符。
- * 5. 再次优化文本分段功能，确保一行内多序号分段的正确性，并保留原有序号。
- * 6. **重要：将关键字弹框提示功能改为Bootstrap模态对话框，并移至“复制”按钮点击时触发。**
- * 7. **调整智能处理功能逻辑，区分有无序号的处理方式，并新增英文标点转中文标点。**
- * 8. 扩展识别八种旧序号格式，确保正确移除，特别是“1．”中的全角点。
- * 9. 修正“加换行符”功能，使其只添加<br>标签，不处理序号。
- * 10. 恢复并调试“转换成功”、“复制成功”等Toast提示，并调整其显示位置和文本。
- * 11. **新增：年份（20XX年/年度）不再被误识别为序号，而是保留并正常添加新序号。**
- * 12. **移除“文本分段”功能。**
- * 13. **修复：智能处理中英文标点转换导致 URL/时间被替换为占位符的问题 (彻底解决占位符被转换)。**
- * 14. **修复：两级序号功能，不再完全依赖缩进，而是智能识别两种输入序号格式及通过上下文判断。**
- * 15. **新增：识别并移除“一、二、三、”等中文数字带顿号的旧序号。**
- * 16. **修复：两级序号功能，处理单一序号类型文本时，自动降级为单级转换。**
- * 17. **修复：两级序号功能，标题行后子项计数错误及后续一级序号识别问题。**
- * 18. **修复：一级/二级序号功能，首行标题（冒号结尾且无原序号）不加新序号，且句末不加句号。**
- */
+*script.js - 前端逻辑文件
+
 
 console.log('Script file loading...'); // Debug: Script file is being parsed
 
@@ -116,6 +94,27 @@ function clearInput(tabId) {
 
     showNotification('已清空');
 }
+
+// **NEW:** 粘贴文本到输入框
+async function pasteInput(tabId) {
+    const inputTextarea = document.getElementById(`input_text_${tabId}`);
+    try {
+        // 使用 navigator.clipboard.readText() 需要用户授予权限或在安全上下文 (https) 中运行
+        const text = await navigator.clipboard.readText();
+        inputTextarea.value = text;
+        inputTextarea.classList.remove('placeholder-active'); // 移除placeholder样式
+        showNotification('粘贴成功！');
+    } catch (err) {
+        console.error('粘贴失败:', err);
+        // 如果是DOMException: NotAllowedError (用户未授权剪贴板读取)，或浏览器安全限制
+        if (err.name === 'NotAllowedError' || err.name === 'SecurityError') {
+             showNotification('粘贴失败：浏览器安全设置阻止了自动粘贴。请手动 Ctrl+V / Cmd+V 粘贴。');
+        } else {
+            showNotification('粘贴失败，请手动粘贴。');
+        }
+    }
+}
+
 
 // 复制输出结果 - **关键字检查逻辑已移至此处**
 function copyOutput(tabId) {
@@ -295,12 +294,8 @@ function remove_leading_patterns_and_standardize_spaces_smart(line) {
         // 如果是年份行，保留年份部分，并处理年份后面的内容
         // year_match[1] 是捕获的年份字符串本身 (如 "2025年")
         // year_match[0].length 是匹配到的完整前缀长度，包括前导和尾随空白
-        let content_after_year = standardized_line.substring(year_match[0].length);
-        // 对年份后面的内容进行内部空格标准化并去首尾空
-        let processed_content_after_year = standardize_internal_whitespace_to_single(content_after_year);
-        
-        // 返回年份 + 单个空格 + 处理后的内容。如果处理后的内容为空，只返回年份。
-        return `${year_match[1]}` + (processed_content_after_year ? ` ${processed_content_after_year}` : '');
+        let content_after_year = standardize_internal_whitespace_to_single(standardized_line.substring(year_match[0].length));
+        return `${year_match[1]}` + (content_after_year ? ` ${content_after_year}` : '');
     }
 
     // 如果不是年份行，则尝试移除其他类型的行首序号
@@ -309,19 +304,20 @@ function remove_leading_patterns_and_standardize_spaces_smart(line) {
     return standardize_internal_whitespace_to_single(cleaned_line);
 }
 
-// 辅助函数：确保字符串以中文句号“。”结尾，并移除已存在的常见句末标点（包括冒号、分号）。
-// 注意：此函数不处理冒号结尾的标题行，因为那些应该保持冒号。
+// 辅助函数：确保字符串以中文句号“。”结尾，并移除已存在的常见句末标点（包括分号）。
+// 但如果原始文本以冒号“：”结尾，则保留冒号，不加句号。
+// 此函数用于对“被赋予新序号”的行进行句末标准化。
 function standardize_end_punctuation_for_numbered_items(text) {
     text = text.trim();
     if (!text) return '';
-    // 移除已存在的句末标点，但保留冒号结尾的标题行
-    // 匹配的标点符号：. , ; ! ? 。 ？ ！ ； （不包括 ：）
-    text = text.replace(/[.,;!?。？！；]$/, ''); 
-    // 如果文本不以冒号结尾，则添加中文句号
-    if (!text.endsWith('：')) {
-        text += '。';
+    // 检查原始文本是否以中文冒号结尾，如果是，则保留冒号
+    if (text.endsWith('：')) {
+        return text;
     }
-    return text;
+    // 移除已存在的常见句末标点（不包括冒号）
+    text = text.replace(/[.,;!?。？！；]$/, ''); 
+    // 添加中文句号
+    return text + '。';
 }
 
 
@@ -468,51 +464,45 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
 
     let current_processing_state = 'MAIN_LEVEL'; // 'MAIN_LEVEL' or 'SUB_LEVEL_MODE'
 
-    let first_actual_line_handled = false; // Tracks if the very first non-empty line has been processed specially or normally
+    // This flag is ONLY for single-level tabs (level1, level2) to handle the special first title line.
+    // It's checked *per function call*.
+    let single_level_first_line_title_exception_applied_for_this_call = false; 
 
     // --- Pre-scan for Two-Level determination (only if is_two_level_requested is true) ---
-    let actual_two_level_conversion_needed = false;
+    // This part runs once at the beginning of the function call for two-level mode.
+    let actual_two_level_conversion_needed = false; // Default to false, will be true only if two distinct types are found
     if (is_two_level_requested) {
-        let found_l1_pattern_count = 0;
-        let found_l2_pattern_count = 0;
-        // Count distinct pattern types (L1 vs L2)
-        const scan_limit = Math.min(lines.length, 50); // Scan first 50 lines for efficiency
+        let found_l1_pattern_in_scan = false;
+        let found_l2_pattern_in_scan = false;
+        
+        // Scan first 50 lines or all lines if fewer
+        const scan_limit = Math.min(lines.length, 50); 
         for (let i = 0; i < scan_limit; i++) {
             const line_to_scan = lines[i];
-            if (!line_to_scan.trim()) continue; // Skip empty lines during scan
+            if (!line_to_scan.trim()) continue; 
 
             // Check for Level 1 candidate patterns
             if (LEVEL1_CANDIDATE_PATTERNS.some(p => p.test(line_to_scan))) {
-                found_l1_pattern_count++;
+                found_l1_pattern_in_scan = true;
             }
             // Check for Level 2 candidate patterns
             if (LEVEL2_CANDIDATE_PATTERNS.some(p => p.test(line_to_scan))) {
-                found_l2_pattern_count++;
+                found_l2_pattern_in_scan = true;
             }
             // If both types are found early, no need to scan further
-            if (found_l1_pattern_count > 0 && found_l2_pattern_count > 0) {
-                actual_two_level_conversion_needed = true;
+            if (found_l1_pattern_in_scan && found_l2_pattern_in_scan) {
+                actual_two_level_conversion_needed = true; // Both types found, proceed with two-level
                 break;
             }
         }
 
-        // Refined fallback logic:
-        // If only one type of pattern or no patterns were found, we will fall back to single-level (level1 format)
-        if (found_l1_pattern_count > 0 && found_l2_pattern_count === 0) {
-            // Only L1-like patterns found, or L1 plus some non-L2 patterns. Force single-level L1 format.
-            actual_two_level_conversion_needed = false;
-            number_format_type = 'level1';
-        } else if (found_l1_pattern_count === 0 && found_l2_pattern_count > 0) {
-            // Only L2-like patterns found. Force single-level L1 format as standard output.
-            actual_two_level_conversion_needed = false;
-            number_format_type = 'level1';
-        } else if (found_l1_pattern_count === 0 && found_l2_pattern_count === 0) {
-            // No recognizable patterns at all. Process as plain text or default L1.
-            actual_two_level_conversion_needed = false; // No complex two-level logic needed
-            // The default number_format_type will be 'level1' if this function is called from convert_two_level_numbers
-            // which handles the numbering if there are plain lines or no patterns.
+        // Fallback logic for two-level requested mode:
+        // If at the end of scan, we don't have both L1 and L2 pattern types, force single-level L1 format.
+        if (!actual_two_level_conversion_needed) { // If two distinct types were NOT found
+            number_format_type = 'level1'; // Force output to level 1 format for all lines
+            console.log("Two-level requested, but two distinct L1/L2 patterns NOT found. Falling back to single-level (L1 format) for all lines."); // Debug
         }
-        // If actual_two_level_conversion_needed remains true, it means both L1 and L2 patterns were detected.
+        // If actual_two_level_conversion_needed remains true, it means both L1 and L2 patterns were detected, so proceed with complex two-level logic.
     }
 
 
@@ -521,6 +511,7 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
         let processed_line_content_standardized = standardize_internal_whitespace_to_single(original_line);
 
         if (!processed_line_content_standardized) {
+            console.log(`Line ${i+1}: Empty or all whitespace, skipping.`); // Debug
             continue; 
         }
 
@@ -528,43 +519,55 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
         const is_current_line_numbered_any_format = LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX.test(original_line) || LEADING_YEAR_PATTERN_REGEX.test(original_line); 
         const ends_with_colon = processed_line_content_standardized.endsWith('：');
         
+        console.groupCollapsed(`--- Processing Line ${i+1} ---`); // Group console logs
+        console.log(`Original: "${original_line}"`);
+        console.log(`Standardized: "${processed_line_content_standardized}"`);
+        console.log(`Current Indent: ${current_indent}`);
+        console.log(`Is numbered (any format, original line): ${is_current_line_numbered_any_format}`);
+        console.log(`Ends with colon (standardized line): ${ends_with_colon}`);
+        console.log(`single_level_first_line_title_exception_applied_for_this_call (before this line's processing): ${single_level_first_line_title_exception_applied_for_this_call}`);
+        console.log(`current_processing_state (before): ${current_processing_state}`);
+        console.log(`is_two_level_requested: ${is_two_level_requested}`);
+        console.log(`actual_two_level_conversion_needed: ${actual_two_level_conversion_needed}`);
+        console.log(`number_format_type for this call: ${number_format_type}`);
+
         let should_output_as_level1 = false;
         let should_output_as_level2 = false;
-        let should_output_as_plain_text = false; // Flag for lines that should not be numbered
+        let should_output_as_plain_text = false; // Flag for lines that should not be numbered (e.g., specific titles in single-level mode)
 
-        // --- Universal First Content Line Special Handling (for ANY numbering function) ---
-        // This check must happen for the *very first* non-empty line of the input.
-        if (!first_actual_line_handled) {
-            if (ends_with_colon && !is_current_line_numbered_any_format) {
-                // This is a pure title line (ends with colon, no existing number).
-                // Add it as is, preserve its colon, do NOT number it.
-                result_lines.push(processed_line_content_standardized);
-                first_actual_line_handled = true; 
-                // If it's a two-level requested context, this title line initiates sub-level mode.
-                if (is_two_level_requested && actual_two_level_conversion_needed) {
-                     current_processing_state = 'SUB_LEVEL_MODE';
-                     console.log(`Line ${i+1}: Detected L1 Title. State: ${current_processing_state}`);
-                }
-                continue; // Skip all further processing for this line.
-            }
-            first_actual_line_handled = true; // For the first line, if not a title, it will be numbered normally below.
+        // Content after removing old numbers/years. This is done early because we need it for title detection and for numbering.
+        let cleaned_content_for_numbering = remove_leading_patterns_and_standardize_spaces_smart(processed_line_content_standardized);
+
+        // --- Special "first line is title" check for SINGLE-LEVEL modes ONLY ---
+        // This applies if it's the very first non-empty line of the *input* for single-level tabs (level1, level2).
+        const is_this_line_a_single_level_title_exception = ends_with_colon && !is_current_line_numbered_any_format;
+        if (!is_two_level_requested && !single_level_first_line_title_exception_applied_for_this_call && is_this_line_a_single_level_title_exception) {
+            // This is a pure title line for single-level modes. Add it as is, preserve its colon, do NOT number it.
+            result_lines.push(processed_line_content_standardized); 
+            single_level_first_line_title_exception_applied_for_this_call = true; // Apply exception for this specific function call
+            console.log(`Output as Single-Level Title Exception: "${processed_line_content_standardized}"`);
+            console.groupEnd(); // End group for this line
+            continue; // Skip all further processing for this special title line.
+        }
+        // Mark that the first line has now been processed (even if it wasn't a special title)
+        // This ensures the exception check only happens once per function call.
+        if (!single_level_first_line_title_exception_applied_for_this_call) {
+            // This condition ensures that if it was not caught by the `is_this_line_a_single_level_title_exception`
+            // then it means it's a regular first line for the single-level flow, which will be numbered below.
+            single_level_first_line_title_exception_applied_for_this_call = true;
         }
 
-        // --- Core Logic for Numbering or Plain Text for subsequent lines ---
-        // First, get content after removing potential old numbers/years.
-        let content_after_prefix_removal = remove_leading_patterns_and_standardize_spaces_smart(processed_line_content_standardized);
 
         if (is_two_level_requested && actual_two_level_conversion_needed) { 
-            // --- Complex Two-Level Logic ---
-            // Rule A: A numbered line ending with a colon (if not already handled by universal first line rule) is an L1 header.
-            // This is primarily for L1s that are *not* the very first line but are L1 headers (e.g., '2. 具体如下：')
+            // --- Complex Two-Level Logic (if two-level conversion is actually needed based on pre-scan) ---
+            // Rule A: A numbered line ending with a colon is an L1 header, activates SUB_LEVEL_MODE
             if (is_current_line_numbered_any_format && ends_with_colon) { 
                 should_output_as_level1 = true;
                 current_processing_state = 'SUB_LEVEL_MODE'; 
             } 
-            // Rule B: If in SUB_LEVEL_MODE and current line is numbered, it's an L2 item, *unless* it's a clear new L1.
+            // Rule B: If in SUB_LEVEL_MODE and current line is numbered, it's an L2 item, UNLESS it's a clear new L1.
             else if (current_processing_state === 'SUB_LEVEL_MODE' && is_current_line_numbered_any_format) {
-                // A clear new L1 is a LEVEL1_CANDIDATE_PATTERN at indent 0 (like '三、' or '(3)') and not ending with a colon (Rule A covers colon).
+                // A clear new L1 is a LEVEL1_CANDIDATE_PATTERN at indent 0 (like '三、' or '(3)').
                 const is_clear_new_L1_pattern = LEVEL1_CANDIDATE_PATTERNS.some(p => p.test(original_line)) && current_indent === 0;
                 
                 if (is_clear_new_L1_pattern) { 
@@ -574,72 +577,65 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
                     should_output_as_level2 = true;
                 }
             }
-            // Rule C: If current line has a clear L1 pattern at indent 0 (and is not an L1 header with colon).
-            // This handles L1s that are not headers and signifies a new main point and exits any sub-level mode.
+            // Rule C: If current line has a clear L1 pattern at indent 0 (not a colon-ending header).
             else if (LEVEL1_CANDIDATE_PATTERNS.some(p => p.test(original_line)) && current_indent === 0) {
                 should_output_as_level1 = true;
                 current_processing_state = 'MAIN_LEVEL'; 
             }
             // Rule D: If current line has a clear L2 pattern OR has significant indent (>0).
-            // This also implies exiting any implicit L1 sequence, as it's a L2 item.
             else if (LEVEL2_CANDIDATE_PATTERNS.some(p => p.test(original_line)) || current_indent > 0) {
                 should_output_as_level2 = true;
                 current_processing_state = 'MAIN_LEVEL'; 
             }
             // Rule E: Fallback - If it's a numbered line but didn't fit (shouldn't happen often with comprehensive rules)
             else if (is_current_line_numbered_any_format) {
-                should_output_as_level1 = true;
+                should_output_as_level1 = true; // Default to L1 for unhandled numbered lines
                 current_processing_state = 'MAIN_LEVEL'; 
             }
-            // Rule F: If not numbered at all (and not the special first title line)
+            // Rule F: If not numbered at all (in two-level mode with actual_two_level_conversion_needed) -> it should be L1.
             else {
-                should_output_as_plain_text = true;
-                current_processing_state = 'MAIN_LEVEL'; // Exit sub-section if non-numbered line encountered
+                should_output_as_level1 = true; // Any non-numbered line in this mode gets L1
+                current_processing_state = 'MAIN_LEVEL'; // Unnumbered lines break sub-section mode
             }
 
-            // Apply numbering/formatting based on determined level for actual_two_level_conversion_needed
+            // Apply numbering/formatting based on determined level
             if (should_output_as_level1) {
-                const final_content = standardize_end_punctuation_for_numbered_items(content_after_prefix_removal);
+                const final_content = standardize_end_punctuation_for_numbered_items(cleaned_content_for_numbering); // Apply period, preserve colon if exists
                 result_lines.push(`（${current_num_level1}）${final_content}`);
                 current_num_level1 += 1;
                 current_num_level2 = 1; 
-                console.log(`Line ${i+1}: Output as L1: (${current_num_level1-1}). Next L1: ${current_num_level1}. Next L2: ${current_num_level2}. State: ${current_processing_state}`); // Debug
+                console.log(`Output as L1: (${current_num_level1-1}). Next L1: ${current_num_level1}. Next L2: ${current_num_level2}. State: ${current_processing_state}`);
             } else if (should_output_as_level2) {
                 const circled_num = current_num_level2 <= 20 ? String.fromCharCode(0x2460 + current_num_level2 - 1) : `[${current_num_level2}]`;
                 const indent_string = current_indent > 0 ? ' '.repeat(current_indent) : '  '; 
-                const final_content = standardize_end_punctuation_for_numbered_items(content_after_prefix_removal);
+                const final_content = standardize_end_punctuation_for_numbered_items(cleaned_content_for_numbering);
                 result_lines.push(`${indent_string}${circled_num}${final_content}`);
                 current_num_level2 += 1;
-                console.log(`Line ${i+1}: Output as L2: ${circled_num}. Next L2: ${current_num_level2}. State: ${current_processing_state}`); // Debug
-           } else if (should_output_as_plain_text) {
-                result_lines.push(processed_line_content_standardized); // Add as is, no numbering, no forced period.
-            } else {
-                console.warn(`Unhandled logical path for line ${i+1} in two-level mode; added as plain text: ${original_line}`);
+                console.log(`Output as L2: ${circled_num}. Next L2: ${current_num_level2}. State: ${current_processing_state}`);
+           } else {
+                console.warn(`Unhandled logical path for line ${i+1} in two-level mode (actual_two_level_conversion_needed is true); this should not happen. Adding as plain text: ${original_line}`);
                 result_lines.push(processed_line_content_standardized); // Fallback for safety
             }
 
-        } else { // Single level numbering (if not two-level requested, or fell back from two-level)
-            // Rule G: If the line should not be numbered (i.e., it's plain text and not the special first title line).
-            if (!is_current_line_numbered_any_format) {
-                result_lines.push(processed_line_content_standardized); // Add as is
-                continue; // Skip numbering logic
-            }
+        } else { // Single level numbering (either single-level tab OR two-level tab that fell back to single-level)
+            // For these modes, all content lines (other than the special first title if applicable) should get a number.
+            const final_content = standardize_end_punctuation_for_numbered_items(cleaned_content_for_numbering); // Apply period, preserve colon if exists
             
-            // Rule H: If it IS numbered, apply the requested single-level numbering format.
-            const final_content = standardize_end_punctuation_for_numbered_items(content_after_prefix_removal); // Always add period for numbered items
             if (number_format_type === 'level1') {
                 result_lines.push(`（${current_num_level1}）${final_content}`);
                 current_num_level1 += 1;
-            } 
-            else if (number_format_type === 'level2') {
+                console.log(`Output as single L1: (${current_num_level1-1}).`);
+            } else if (number_format_type === 'level2') {
                 const circled_num = current_num_level1 <= 20 ? String.fromCharCode(0x2460 + current_num_level1 - 1) : `[${current_num_level1}]`;
                 result_lines.push(`${circled_num}${final_content}`);
                 current_num_level1 += 1;
+                console.log(`Output as single L2: ${circled_num}.`);
             } else {
-                 console.warn(`Unhandled single-level numbering path for line ${i+1}: ${original_line}`);
-                 result_lines.push(processed_line_content_standardized); // Fallback
+                console.warn(`Unexpected number_format_type or unhandled path in single-level mode: ${number_format_type}. Line ${i+1} added as plain: ${original_line}`);
+                result_lines.push(processed_line_content_standardized);
             }
         }
+        console.groupEnd(); // End group for this line
     }
     return result_lines.join('\n');
 }
@@ -656,7 +652,8 @@ function convert_level2_numbers(text) {
 
 // 两级序号转换：一级（1）（2）...，二级①②...
 function convert_two_level_numbers(text) {
-    return process_numbered_list(text, 'level1', true); // Pass true for is_two_level_requested, default type is level1 for fallback
+    // Pass 'level1' as default number_format_type for fallback, and true for is_two_level_requested
+    return process_numbered_list(text, 'level1', true); 
 }
 
 
@@ -669,8 +666,12 @@ function delete_numbers(text) {
         let stripped_line = standardize_internal_whitespace_to_single(line);
         if (stripped_line) { // 只处理非空行
             // 移除序号和行首空格，并标准化内部空格 (使用智能移除函数，它会保留年份但仍移除其他序号)
-            let cleaned_line = remove_leading_patterns_and_standardize_spaces_smart(stripped_line);
-            processed_lines.push(cleaned_line);
+            let cleaned_line_content = remove_leading_patterns_and_standardize_spaces_smart(stripped_line);
+            // 删除序号功能中，不需要句末加句号，也不需要保留冒号，所以直接移除所有常见标点
+            // 保留原始冒号，仅移除句号、问号、叹号、分号，和英文对应的标点
+            cleaned_line_content = cleaned_line_content.replace(/[.,;!?。？！；]/g, ''); 
+            // 确保没有多余的空格在句末
+            processed_lines.push(cleaned_line_content.trim());
         }
     }
     // 使用双换行符连接，以在每段之间创建空行
@@ -685,7 +686,7 @@ function add_br_tags(text) {
         // 对当前行进行初步的空格标准化
         let stripped_line = standardize_internal_whitespace_to_single(line);
         if (stripped_line) { // 只处理非空行
-            // 此功能不移除行首的序号或前缀，只确保句末有中文句号，然后追加 <br>
+            // 此功能不移除行首的序号或前缀，只确保句末有中文句号（或保持冒号），然后追加 <br>
             // 注意：这里不能调用 remove_leading_patterns_and_standardize_spaces_smart，因为此功能不应移除序号或年份
             const processed_sentence = standardize_end_punctuation_for_numbered_items(stripped_line); // 确保句末有句号
             result_lines.push(processed_sentence + '<br>');
@@ -726,17 +727,8 @@ function smart_process_text(text) {
 
         // 2. 定义分段的正则表达式。
         // 分段点：在句号、问号、叹号、分号或冒号之后，如果紧跟着可选空白和一个序号模式（包括年份模式），则在此处分段。
-        const full_leading_pattern_for_split = '(?:' +
-            '\\d+[.\\uFF0E)））、]?|' + // 包含所有数字序号 (更新以包含全角右括号和顿号)
-            '[一二三四五六七八九十]+、|' + // 识别“一、二、”这种中文数字带顿号的序号
-            '[(\uFF08][\\d一二三四五六七八九十]{1,2}[)\uFF09]、?|' + 
-            '[\\u2460-\\u2473\\u24EB-\\u24F4]|' +
-            '[a-zA-Z][.\\uFF0E)）]?|' + // 匹配字母序号，例如 A. 或 a)
-            '第\\s*\\d+\\s*条?|' +
-            '20\\d{2}[年年度]' + // 明确加上年份模式
-        ')';
         const smart_segment_split_regex = new RegExp(
-            `(?<=[。？！；：])${OPTIONAL_WHITESPACE_STR}(?=${full_leading_pattern_for_split})`, 'g'
+            `(?<=[。？！；：])${OPTIONAL_WHITESPACE_STR}(?=${LEADING_NUMBER_PATTERN_BASE}|20\\d{2}[年年度])`, 'g'
         );
 
         let segments = flattened_text_all_whitespace_removed.split(smart_segment_split_regex);
@@ -745,21 +737,13 @@ function smart_process_text(text) {
         for (let segment of segments) {
             segment = segment.trim();
             if (segment) {
-                // For smart processing, if it contains a leading number, we want to ensure it ends with a period.
-                // If it's a plain segment, we just add it as is.
-                // This function should generally ensure periods for numbered items, not touch colons.
+                // For smart processing, ensure numbered segments end with a period (unless it's a colon-ending title).
+                // Non-numbered segments also attempt to end with a period.
                 const is_segment_numbered = LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX.test(segment) || LEADING_YEAR_PATTERN_REGEX.test(segment);
-                if (is_segment_numbered) {
+                if (is_segment_numbered || !/[。？！；：.]$/.test(segment)) { // If numbered, or if not ending with common punctuation
                     result_segments.push(standardize_end_punctuation_for_numbered_items(segment));
                 } else {
-                    // For non-numbered segments in smart mode, we want to preserve original punctuation,
-                    // but ensure it ends with a period if it looks like a sentence.
-                    // This is a heuristic. We'll simplify to just adding a period if it doesn't end with one already.
-                    if (!/[。？！；：.]$/.test(segment)) { // Check for common end punctuation
-                       result_segments.push(segment + '。');
-                    } else {
-                        result_segments.push(segment);
-                    }
+                    result_segments.push(segment); // Already ends with punctuation, keep as is
                 }
             }
         }
