@@ -10,25 +10,6 @@
     <link rel="stylesheet" href="./static/css/style.css">
 </head>
 <body>
-    <!-- Toast 通知容器 - 放置在页面顶部中央，用于显示操作提示 -->
-<!-- Keyword Alert Modal -->
-<div class="modal fade" id="keywordAlertModal" tabindex="-1" aria-labelledby="keywordAlertModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="keywordAlertModalLabel">提示</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body" id="keywordAlertModalBody">
-                <!-- 提示消息将注入到这里 -->
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">确认关闭</button>
-            </div>
-        </div>
-    </div>
-</div>
-
     <!-- 整体容器，h-100表示高度100%，d-flex flex-column使其内容垂直排列 -->
     <div class="container-fluid h-100 d-flex flex-column">
         <!-- 顶部状态栏 - 仅作标题显示 -->
@@ -49,7 +30,7 @@
                     <button class="nav-link" id="v-pills-twolevel-tab" data-bs-toggle="pill" data-bs-target="#v-pills-twolevel" type="button" role="tab" aria-controls="v-pills-twolevel" aria-selected="false" data-func-id="3">两级序号</button>
                     <button class="nav-link" id="v-pills-delete-tab" data-bs-toggle="pill" data-bs-target="#v-pills-delete" type="button" role="tab" aria-controls="v-pills-delete" aria-selected="false" data-func-id="4">删除序号</button>
                     <button class="nav-link" id="v-pills-addbr-tab" data-bs-toggle="pill" data-bs-target="#v-pills-addbr" type="button" role="tab" aria-controls="v-pills-addbr" aria-selected="false" data-func-id="5">加换行符</button>
-                    <button class="nav-link" id="v-pills-segment-tab" data-bs-toggle="pill" data-bs-target="#v-pills-segment" type="button" role="tab" aria-controls="v-pills-segment" aria-selected="false" data-func-id="8">文本分段</button>
+                    <!-- "文本分段" 按钮已移除 -->
                     <button class="nav-link" id="v-pills-smart-tab" data-bs-toggle="pill" data-bs-target="#v-pills-smart" type="button" role="tab" aria-controls="v-pills-smart" aria-selected="false" data-func-id="11">智能处理</button>
                     <button class="nav-link" id="v-pills-quickcopy-tab" data-bs-toggle="pill" data-bs-target="#v-pills-quickcopy" type="button" role="tab" aria-controls="v-pills-quickcopy" aria-selected="false" data-func-id="6">快捷复制</button>
                 </div>
@@ -60,7 +41,6 @@
                 <div class="tab-content flex-grow-1" id="v-pills-tabContent">
                     <!-- Tab 1: 一级序号 -->
                     <div class="tab-pane fade show active" id="v-pills-level1" role="tabpanel" aria-labelledby="v-pills-level1-tab">
-                        <!-- <h4>一级序号转换</h4> 已删除 -->
                         <div class="mb-3">
                             <label for="input_text_level1" class="form-label">请输入或者粘贴需要修改的文本</label>
                             <textarea class="form-control placeholder-text" id="input_text_level1" rows="3" placeholder="将您提供的文本一键转换为（1）（2）…格式"></textarea>
@@ -80,7 +60,6 @@
 
                     <!-- Tab 2: 二级序号 -->
                     <div class="tab-pane fade" id="v-pills-level2" role="tabpanel" aria-labelledby="v-pills-level2-tab">
-                        <!-- <h4>二级序号转换</h4> 已删除 -->
                         <div class="mb-3">
                             <label for="input_text_level2" class="form-label">请输入或者粘贴需要修改的文本</label>
                             <textarea class="form-control placeholder-text" id="input_text_level2" rows="3" placeholder="将您提供的文本一键转换为①②③…格式"></textarea>
@@ -100,7 +79,6 @@
 
                     <!-- Tab 3: 两级序号 -->
                     <div class="tab-pane fade" id="v-pills-twolevel" role="tabpanel" aria-labelledby="v-pills-twolevel-tab">
-                        <!-- <h4>两级序号转换</h4> 已删除 -->
                         <div class="mb-3">
                             <label for="input_text_twolevel" class="form-label">请输入或者粘贴需要修改的文本</label>
                             <textarea class="form-control placeholder-text" id="input_text_twolevel" rows="3" placeholder="将一级转换为（1）（2）...，二级序号转换为①②...；当申报须知编辑中需添加两种序号时可用"></textarea>
@@ -120,7 +98,6 @@
 
                     <!-- Tab 4: 删除序号 -->
                     <div class="tab-pane fade" id="v-pills-delete" role="tabpanel" aria-labelledby="v-pills-delete-tab">
-                        <!-- <h4>删除序号</h4> 已删除 -->
                         <div class="mb-3">
                             <label for="input_text_delete" class="form-label">请输入或者粘贴需要修改的文本</label>
                             <textarea class="form-control placeholder-text" id="input_text_delete" rows="3" placeholder="去掉序号，空一行，转换后可复制粘贴到申报条件整理框里点击一键同步"></textarea>
@@ -140,7 +117,6 @@
 
                     <!-- Tab 5: 加换行符 -->
                     <div class="tab-pane fade" id="v-pills-addbr" role="tabpanel" aria-labelledby="v-pills-addbr-tab">
-                        <!-- <h4>加换行符</h4> 已删除 -->
                         <div class="mb-3">
                             <label for="input_text_addbr" class="form-label">请输入或者粘贴需要修改的文本</label>
                             <textarea class="form-control placeholder-text" id="input_text_addbr" rows="3" placeholder="句末加上&lt;br&gt;标签，转换后可复制粘贴到扶持标准输入框"></textarea>
@@ -158,32 +134,13 @@
                         </div>
                     </div>
 
-                    <!-- Tab 6: 文本分段 -->
-                    <div class="tab-pane fade" id="v-pills-segment" role="tabpanel" aria-labelledby="v-pills-segment-tab">
-                        <!-- <h4>文本分段</h4> 已删除 -->
-                        <div class="mb-3">
-                            <label for="input_text_segment" class="form-label">请输入或者粘贴待处理的文本</label>
-                            <textarea class="form-control placeholder-text" id="input_text_segment" rows="3" placeholder="识别序号并自动分段，句末统一为句号。"></textarea>
-                        </div>
-                        <div class="d-flex justify-content-center mb-3">
-                            <button type="button" class="btn btn-secondary me-2" onclick="clearInput('segment')">清空</button>
-                            <button type="button" class="btn btn-primary me-2" onclick="processText('segment')">按序号分段</button>
-                        </div>
-                        <div class="mb-3">
-                            <label for="output_text_segment" class="form-label">输出结果</label>
-                            <textarea class="form-control" id="output_text_segment" rows="3" readonly></textarea>
-                        </div>
-                        <div class="d-flex justify-content-center">
-                            <button type="button" class="btn btn-success" onclick="copyOutput('segment')">复制</button>
-                        </div>
-                    </div>
+                    <!-- "文本分段" Tab 已移除 -->
 
                     <!-- Tab 7: 智能处理 -->
                     <div class="tab-pane fade" id="v-pills-smart" role="tabpanel" aria-labelledby="v-pills-smart-tab">
-                        <!-- <h4>智能处理</h4> 已删除 -->
                         <div class="mb-3">
                             <label for="input_text_smart" class="form-label">请输入或者粘贴需要清理的文本</label>
-                            <textarea class="form-control placeholder-text" id="input_text_smart" rows="3" placeholder="智能清理文本：包含序号时，行内彻底去空格并标准化序号；无序号时，全局去空格并标准化标点。"></textarea>
+                            <textarea class="form-control placeholder-text" id="input_text_smart" rows="3" placeholder="智能清理文本：删除空格换行符；转换英文标点为中文标点（网址时间除外）；根据有无序号智能分段。"></textarea>
                         </div>
                         <div class="d-flex justify-content-center mb-3">
                             <button type="button" class="btn btn-secondary me-2" onclick="clearInput('smart')">清空</button>
@@ -214,6 +171,38 @@
 
                 </div>
             </main>
+        </div>
+    </div>
+
+    <!-- Toast Container for general notifications -->
+    <div class="toast-container position-fixed top-0 start-50 translate-middle-x p-3">
+        <div id="liveToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <strong class="me-auto">提示</strong> <!-- "通知"改为"提示" -->
+                <!-- <small>现在</small> --> <!-- "现在"字样移除 -->
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body" id="toast-message">
+                <!-- 消息文本将注入到这里 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyword Alert Modal -->
+    <div class="modal fade" id="keywordAlertModal" tabindex="-1" aria-labelledby="keywordAlertModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="keywordAlertModalLabel">提示</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="keywordAlertModalBody">
+                    <!-- 提示消息将注入到这里 -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">确认关闭</button>
+                </div>
+            </div>
         </div>
     </div>
 
