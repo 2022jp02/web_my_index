@@ -320,8 +320,8 @@ const WHITESPACE_TO_REMOVE_REGEX_ALL = new RegExp(MANDATORY_WHITESPACE_STR, 'g')
 // 注意：此正则不再匹配明确的年份格式，年份由 LEADING_YEAR_PATTERN_REGEX 独立处理
 const LEADING_NUMBER_PATTERN_BASE = '(?:' +
     // (?!20\\d{2}[年年度]) 负向先行断言确保不是20XX年/年度开头的数字
-    // \\d+[.\uFF0E)））、]? 匹配数字后跟点、全角点、右括号、全角右括号、顿号
-    '(?!20\\d{2}[年年度])\\d+[.\uFF0E)））、]?|' + 
+    // \\d+[.\\uFF0E)））、]? 匹配数字后跟点、全角点、右括号、全角右括号、顿号
+    '(?!20\\d{2}[年年度])\\d+[.\\uFF0E)））、]?|' + 
     '[一二三四五六七八九十]+、|' + // 识别“一、二、”这种中文数字带顿号的序号
     '[\uFF08][\\d一二三四五六七八九十]{1,2}[\uFF09]、?|' + // (1)、（1）、(一)、（一） and their versions with trailing 、
     '[\u2460-\u2473\u24EB-\u24F4]|' + // circled numbers ①②③
@@ -351,19 +351,21 @@ const LEVEL2_CANDIDATE_PATTERNS = [
 ];
 
 // 特殊用于两级序号功能，精确匹配（数字）和 ① 的正则表达式
-const TWO_LEVEL_SPECIFIC_L1_INPUT_PATTERN = /^\s*[\(（]\d+[\)）][\s\S]*$/; // 匹配 (1), （1），并匹配后续所有内容直到行尾
-const TWO_LEVEL_SPECIFIC_L2_INPUT_PATTERN = /^\s*[\u2460-\u2473\u24EB-\u24F4][\s\S]*$/; // 匹配 ①，并匹配后续所有内容直到行尾
+// 这些将用于判断原始行是否是指定格式的序号
+const TWO_LEVEL_SPECIFIC_L1_INPUT_PATTERN = /^\s*[\(（]\d+[\)）]/; // 匹配 (1), （1）
+const TWO_LEVEL_SPECIFIC_L2_INPUT_PATTERN = /^\s*[\u2460-\u2473\u24EB-\u24F4]/; // 匹配 ①
 
 
 // 辅助函数：标准化文本中的所有空白字符为单个空格，并移除首尾空格
-// 此函数保留，用于需要将连续空白压缩为单个空格的场景。
+// 这是大多数功能所需的“标准化”空格处理，即保留单词间单个空格。
 function standardize_internal_whitespace_to_single(text) {
     if (!text) return '';
+    // 替换所有连续的空白字符（包括各种Unicode空白）为一个空格，并移除首尾空格
     return text.replace(WHITESPACE_TO_SINGLE_SPACE_REGEX, ' ').trim();
 }
 
 // 辅助函数：移除所有空白字符（包括各种Unicode空白和单词间的空格），使其紧密排列
-// 此函数是实现“不允许存在空格”的关键。
+// 仅用于需要完全无空格的特定场景（如智能处理的某些模式）。
 function remove_all_internal_whitespace(text) {
     if (!text) return '';
     return text.replace(WHITESPACE_TO_REMOVE_REGEX_ALL, '').trim();
@@ -371,26 +373,26 @@ function remove_all_internal_whitespace(text) {
 
 // 辅助函数：移除行开头可能存在的旧序号和多余空格，并标准化剩余内容中的空格为单个空格。
 // 特殊处理年份，不移除年份。
-// **FIX:** 此函数现在将使用 `remove_all_internal_whitespace` 来确保内容中没有空格。
+// 此函数现在将使用 `standardize_internal_whitespace_to_single` 来确保内容中只有单个空格。
 function remove_leading_patterns_and_standardize_spaces_smart(line) {
-    // 首先对整行进行彻底的内部空格移除和首尾去空
-    let cleaned_initial_line = remove_all_internal_whitespace(line); // **FIXED:** 使用 remove_all_internal_whitespace
-    if (!cleaned_initial_line) return ''; // 如果是空行，直接返回空
+    // 首先对整行进行初步的内部空格标准化和首尾去空
+    let standardized_line = standardize_internal_whitespace_to_single(line);
+    if (!standardized_line) return ''; // 如果是空行，直接返回空
 
     // 尝试匹配行首的年份模式
-    const year_match = cleaned_initial_line.match(LEADING_YEAR_PATTERN_REGEX); // 匹配在已经去除了所有内部空格的行
+    const year_match = standardized_line.match(LEADING_YEAR_PATTERN_REGEX);
     if (year_match) {
         // 如果是年份行，保留年份部分，并处理年份后面的内容
         // year_match[1] 是捕获的年份字符串本身 (如 "2025年")
         // year_match[0].length 是匹配到的完整前缀长度，包括前导和尾随空白
-        let content_after_year = remove_all_internal_whitespace(cleaned_initial_line.substring(year_match[0].length)); // **FIXED:** 使用 remove_all_internal_whitespace
-        return `${year_match[1]}` + (content_after_year ? `${content_after_year}` : ''); // 年份和内容之间也不留空格
+        let content_after_year = standardize_internal_whitespace_to_single(standardized_line.substring(year_match[0].length));
+        return `${year_match[1]}` + (content_after_year ? ` ${content_after_year}` : ''); // 年份和内容之间保留一个空格
     }
 
     // 如果不是年份行，则尝试移除其他类型的行首序号
-    let cleaned_line = cleaned_initial_line.replace(LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX, '');
-    // 对剩余部分进行内部空格移除和两端去空白
-    return remove_all_internal_whitespace(cleaned_line); // **FIXED:** 使用 remove_all_internal_whitespace
+    let cleaned_line = standardized_line.replace(LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX, '');
+    // 对剩余部分进行内部空格标准化和两端去空白
+    return standardize_internal_whitespace_to_single(cleaned_line);
 }
 
 // 辅助函数：确保字符串以中文句号“。”结尾，并移除已存在的常见句末标点（包括分号）。
@@ -533,7 +535,7 @@ function replaceEnglishPunctuationToChinese(text) {
             .replace(/\[/g, '〔').replace(/\]/g, '〕').replace(/\{/g, '｛').replace(/\}/g, '｝')
             .replace(/%/g, '％').replace(/~/g, '～').replace(/\$/g, '＄').replace(/#/g, '＃')
             .replace(/@/g, '＠').replace(/\//g, '／').replace(/\\/g, '＼')
-            .replace(/\^/g, '＾').replace(/_/g, '＿').replace(/-/g, '－'); 
+            .replace(/\^/g, '＾').replace(/\_/g, '＿').replace(/-/g, '－'); 
         
         result_parts.push(converted_segment);
     }
@@ -546,16 +548,9 @@ function replaceEnglishPunctuationToChinese(text) {
 
 // 统一处理带序号列表的辅助函数
 function process_numbered_list(text, number_format_type, is_two_level_requested = false) {
-    // **FIX:** 首先对整个输入文本进行初步的彻底空白移除，然后再分割成行。
-    // 这能确保在处理前，所有多余的内部空格和换行符都被清除。
-    const processed_text_no_all_whitespace = remove_all_internal_whitespace(text);
-    const lines = processed_text_no_all_whitespace.split('\n'); // 此时lines中应该没有空行，且每行内部也没有多余空格
+    // **核心修复：先按原始换行符分割，再对每行内容进行处理。**
+    const lines = text.split('\n');
     
-    // 如果没有内容，直接返回。
-    if (lines.length === 0 || (lines.length === 1 && lines[0].trim() === '')) {
-        return '';
-    }
-
     const result_lines = [];
     let current_num_level1 = 1;
     let current_num_level2 = 1;
@@ -565,54 +560,58 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
     let single_level_first_line_title_exception_applied_for_this_call = false; 
 
     for (let i = 0; i < lines.length; i++) {
-        const original_line = lines[i]; // 这里的original_line已经是经过初步彻底去空白后的行
+        const original_line = lines[i];
 
-        // 再次检查行是否为空，虽然理论上经过`remove_all_internal_whitespace`和`split('\n')`后，
-        // 应该不会有纯空行了，但为保险起见，保留此检查。
-        if (!original_line.trim()) {
+        // 对当前行进行初步的空白标准化（转换为单空格，并移除首尾，处理各种空白符）
+        let processed_line_content_standardized = standardize_internal_whitespace_to_single(original_line);
+
+        // 如果处理后为空（即原行是空行或仅包含空白字符），则直接跳过，不添加到结果中。
+        if (!processed_line_content_standardized) {
             console.log(`Line ${i+1}: Empty or all whitespace, skipping.`); // Debug
-            continue; // 跳过空行，不将其添加到结果数组中
+            continue; 
         }
 
         console.groupCollapsed(`--- Processing Line ${i+1} ---`); // Group console logs
-        console.log(`Original Line (after initial global cleanup): "${original_line}"`); // Debug: 这里的行已经没有多余空白
+        console.log(`Original: "${original_line}"`);
+        console.log(`Standardized (initial cleanup): "${processed_line_content_standardized}"`);
         console.log(`is_two_level_requested: ${is_two_level_requested}`);
         console.log(`current_num_level1 (before): ${current_num_level1}`);
         console.log(`current_num_level2 (before): ${current_num_level2}`);
 
-        // `cleaned_content_for_numbering` 现在将通过 `remove_leading_patterns_and_standardize_spaces_smart` 确保完全无空格
-        // 并且它也将处理行首序号的移除。
-        let cleaned_content_for_numbering = remove_leading_patterns_and_standardize_spaces_smart(original_line);
+        // Content after removing old numbers/years and standardizing spaces.
+        let content_after_leading_pattern_removal = remove_leading_patterns_and_standardize_spaces_smart(original_line);
         
         // 确保句末标点标准化，这适用于所有最终会被编号的行，或需要标准化的行。
-        const final_content_with_punctuation = standardize_end_punctuation_for_numbered_items(cleaned_content_for_numbering);
-        const ends_with_colon = original_line.endsWith('：'); // 使用original_line检查冒号，因为`remove_all_internal_whitespace`可能移除它
+        const final_content_with_punctuation = standardize_end_punctuation_for_numbered_items(content_after_leading_pattern_removal);
+        
+        // 检查标准化后的行内容是否以中文冒号结尾，用于标题判断
+        const ends_with_colon = processed_line_content_standardized.endsWith('：');
+
 
         if (is_two_level_requested) { 
-            // --- 针对“两级序号”功能的逻辑 (已重新修订和修复) ---
-            // 注意：TWO_LEVEL_SPECIFIC_L1_INPUT_PATTERN 和 TWO_LEVEL_SPECIFIC_L2_INPUT_PATTERN
-            // 应该检查原始行，以捕获其开头的特定序号格式
-            const is_explicit_l1_input = TWO_LEVEL_SPECIFIC_L1_INPUT_PATTERN.test(original_line); // 检查是否为 (1) （1）格式
-            const is_explicit_l2_input = TWO_LEVEL_SPECIFIC_L2_INPUT_PATTERN.test(original_line); // 检查是否为 ① 格式
+            // --- 针对“两级序号”功能的逻辑 (重新修订和修复) ---
+            // 检查原始行是否符合指定的一级或二级序号模式
+            const is_explicit_l1_input = TWO_LEVEL_SPECIFIC_L1_INPUT_PATTERN.test(original_line); 
+            const is_explicit_l2_input = TWO_LEVEL_SPECIFIC_L2_INPUT_PATTERN.test(original_line); 
 
             if (ends_with_colon && !is_explicit_l1_input && !is_explicit_l2_input) {
                 // 情况1：以冒号结尾，且没有明确的L1/L2序号，视为标题，不编号。
-                // 此时，直接使用原始行，因为 `remove_all_internal_whitespace` 已经处理了所有空格和换行符，
-                // 且标题不应强制加句号。
-                result_lines.push(original_line); // original_line 已经是去除了所有空格的干净标题行
-                current_num_level1 = 1; // 标题通常意味着新的一组序号开始，重置计数器
+                // 输出标准化后的文本（保留冒号，不加句号，内部单空格）
+                result_lines.push(processed_line_content_standardized); 
+                // 标题通常意味着新的一组序号开始，重置计数器
+                current_num_level1 = 1; 
                 current_num_level2 = 1; 
                 console.log(`Unnumbered & ends with colon (Title). Output as plain text. Next L1: ${current_num_level1}, Next L2: ${current_num_level2}.`);
             } else if (is_explicit_l1_input) {
                 // 情况2：明确检测到输入行是（1）（2）...格式
-                // 此时，使用清理后的内容并重新编号
+                // 此时，使用清理后的内容并重新编号为新的一级序号
                 result_lines.push(`（${current_num_level1}）${final_content_with_punctuation}`);
                 current_num_level1++;
                 current_num_level2 = 1; // 遇到一级序号，二级序号重置
                 console.log(`Matched explicit L1 input. Output as NEW L1. Next L1: ${current_num_level1}, Next L2: ${current_num_level2}.`);
             } else if (is_explicit_l2_input) {
                 // 情况3：明确检测到输入行是①②...格式
-                // 此时，使用清理后的内容并重新编号
+                // 此时，使用清理后的内容并重新编号为新的二级序号
                 const circled_num = current_num_level2 <= 20 ? String.fromCharCode(0x2460 + current_num_level2 - 1) : `[${current_num_level2}]`;
                 result_lines.push(`${circled_num}${final_content_with_punctuation}`); 
                 current_num_level2++;
@@ -625,18 +624,17 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
                 console.log(`Unnumbered & no colon. Output as NEW L1. Next L1: ${current_num_level1}, Next L2: ${current_num_level2}.`);
             }
 
-        } else { // 单级序号模式 (level1, level2) 的逻辑
-            // 这部分逻辑保持不变，除了现在 `original_line` 和 `final_content_with_punctuation`
-            // 都已经是彻底去除了所有空格的版本了。
+        } else { // 单级序号模式 (level1, level2) 的逻辑，保持不变
             
             // 特殊处理单级模式下首行是标题的情况
+            // is_current_line_numbered_any_format 应该基于 original_line 来判断
             const is_current_line_numbered_any_format = LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX.test(original_line) || LEADING_YEAR_PATTERN_REGEX.test(original_line); 
             
             const is_this_line_a_single_level_title_exception = ends_with_colon && !is_current_line_numbered_any_format;
             if (!single_level_first_line_title_exception_applied_for_this_call && is_this_line_a_single_level_title_exception) {
-                result_lines.push(original_line); // 标题行保持原样（已去空格）
+                result_lines.push(processed_line_content_standardized); // 标题行保持原样（已去多余空格）
                 single_level_first_line_title_exception_applied_for_this_call = true;
-                console.log(`Output as Single-Level Title Exception: "${original_line}"`);
+                console.log(`Output as Single-Level Title Exception: "${processed_line_content_standardized}"`);
             } else {
                 // 如果不是特殊标题，则正常进行编号和处理
                 if (number_format_type === 'level1') {
@@ -650,7 +648,7 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
                     console.log(`Output as single L2: ${circled_num}.`);
                 } else { 
                     console.warn(`Unexpected number_format_type or unhandled path in single-level mode: ${number_format_type}. Line ${i+1} added as plain: ${original_line}`);
-                    result_lines.push(original_line);
+                    result_lines.push(processed_line_content_standardized);
                 }
             }
             // 确保在处理完第一个非空行后设置此标志，无论它是否是特殊标题。
@@ -684,15 +682,15 @@ function convert_two_level_numbers(text) {
 
 // 删除序号：移除所有序号和行首空格，并确保每段之间空一行
 function delete_numbers(text) {
-    // **FIX:** 首先对整个输入文本进行初步的彻底空白移除，然后再分割成行。
-    const processed_text_no_all_whitespace = remove_all_internal_whitespace(text);
-    const lines = processed_text_no_all_whitespace.split('\n');
-
+    // 允许空行的功能，但每行的内容仍需标准化空格
+    let lines = text.split('\n');
     const processed_lines = [];
     for (let line of lines) {
-        if (line.trim()) { // 只处理非空行
-            // 移除序号和行首空格，并确保内容无内部空格
-            let cleaned_line_content = remove_leading_patterns_and_standardize_spaces_smart(line);
+        // 对当前行进行初步的空格标准化
+        let stripped_line = standardize_internal_whitespace_to_single(line);
+        if (stripped_line) { // 只处理非空行
+            // 移除序号和行首空格，并确保内容内部单空格化
+            let cleaned_line_content = remove_leading_patterns_and_standardize_spaces_smart(stripped_line);
             // 删除序号功能中，不需要句末加句号，也不需要保留冒号，所以直接移除所有常见标点
             cleaned_line_content = cleaned_line_content.replace(/[.,;!?。？！；]/g, ''); 
             // 确保没有多余的空格在句末
@@ -705,16 +703,16 @@ function delete_numbers(text) {
 
 // 加换行符：在每句话末尾添加<br>标签，并保持原有行结构，不处理序号
 function add_br_tags(text) {
-    // **FIX:** 首先对整个输入文本进行初步的彻底空白移除，然后再分割成行。
-    const processed_text_no_all_whitespace = remove_all_internal_whitespace(text);
-    const lines = processed_text_no_all_whitespace.split('\n');
-    
+    // 按原始换行符分割，每行的内容标准化空格
+    const lines = text.split('\n'); 
     const result_lines = [];
     for (let line of lines) {
-        if (line.trim()) { // 只处理非空行
+        // 对当前行进行初步的空格标准化
+        let stripped_line = standardize_internal_whitespace_to_single(line);
+        if (stripped_line) { // 只处理非空行
             // 此功能不移除行首的序号或前缀，只确保句末有中文句号（或保持冒号），然后追加 <br>
-            // content_without_leading_patterns 已经是彻底去空格后的内容
-            let content_for_br = remove_leading_patterns_and_standardize_spaces_smart(line); // 再次调用确保所有空格被移除
+            // 同时确保内容内部是单空格化
+            let content_for_br = remove_leading_patterns_and_standardize_spaces_smart(stripped_line); 
             const processed_sentence = standardize_end_punctuation_for_numbered_items(content_for_br); // 确保句末有句号
             result_lines.push(processed_sentence + '<br>');
         }
@@ -724,7 +722,7 @@ function add_br_tags(text) {
 }
 
 
-// 智能处理：根据文本特征自动清理和格式化 (已大幅修改)
+// 智能处理：根据文本特征自动清理和格式化
 function smart_process_text(text) {
     // 智能处理规则：
     // 1. 删除 <br> 标签。
@@ -748,6 +746,7 @@ function smart_process_text(text) {
         // 目标：对全文进行彻底去空格和换行，并根据原有序号（或年份）和句末标点进行分段，保留原有序号/年份，每段独立一行，并确保句末有句号。
         
         // 1. 将所有非空行合并成一个字符串，并彻底去除所有空白（包括单词间的）
+        // 此处依然使用 remove_all_internal_whitespace，因为此场景是“彻底去空格”后重新分段
         let flattened_text_all_whitespace_removed = remove_all_internal_whitespace(
             original_lines.filter(line => line.trim()).map(line => line.trim()).join('')
         );
@@ -766,6 +765,9 @@ function smart_process_text(text) {
             if (segment) {
                 // For smart processing, ensure numbered segments end with a period (unless it's a colon-ending title).
                 // Non-numbered segments also attempt to end with a period.
+                // 注意：这里调用的 standardize_end_punctuation_for_numbered_items 内部会调用 trim()
+                // 但是不会再额外添加内部空格，因为 flattened_text_all_whitespace_removed 已经彻底去除了内部空格
+                // 这符合智能处理场景A的“彻底去空格”要求
                 const is_segment_numbered = LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX.test(segment) || LEADING_YEAR_PATTERN_REGEX.test(segment);
                 if (is_segment_numbered || !/[。？！；：.]$/.test(segment)) { // If numbered, or if not ending with common punctuation
                     result_segments.push(standardize_end_punctuation_for_numbered_items(segment));
@@ -780,6 +782,7 @@ function smart_process_text(text) {
         // 目标：对全文进行彻底去空格和换行，将所有内容合并为一行，不修改标点（因为标点转换已在上一步完成）。
         
         // 1. 将所有非空行合并成一个字符串，并彻底去除所有空白（包括单词间的）
+        // 此处依然使用 remove_all_internal_whitespace，因为此场景是“彻底去空格”后合并
         let full_text_single_line = remove_all_internal_whitespace(original_lines.filter(line => line.trim()).map(line => line.trim()).join(''));
         
         // 2. 再次确保彻底移除所有剩余的空白
