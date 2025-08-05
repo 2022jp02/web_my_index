@@ -15,9 +15,19 @@
  * 10. 恢复并调试“转换成功”、“复制成功”等Toast提示，并调整其显示位置和文本。
  * 11. **新增：年份（20XX年/年度）不再被误识别为序号，而是保留并正常添加新序号。**
  * 12. **移除“文本分段”功能。**
+ * 13. **修复：智能处理中英文标点转换导致 URL/时间被替换为占位符的问题 (彻底解决占位符被转换)。**
+ * 14. **修复：两级序号功能，不再完全依赖缩进，而是智能识别两种输入序号格式及通过上下文判断。**
+ * 15. **新增：识别并移除“一、二、三、”等中文数字带顿号的旧序号。**
+ * 16. **修复：两级序号功能，处理单一序号类型文本时，自动降级为单级转换。**
+ * 17. **修复：两级序号功能，标题行后子项计数错误及后续一级序号识别问题。**
+ * 18. **修复：一级/二级序号功能，首行标题（冒号结尾且无原序号）不加新序号，且句末不加句号。**
  */
 
+console.log('Script file loading...'); // Debug: Script file is being parsed
+
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM Content Loaded event fired. Script execution started.'); // Debug: DOM ready
+
     // 初始化第一个Tab为激活状态
     var firstTabEl = document.querySelector('#v-pills-tab button:first-child')
     var firstTab = new bootstrap.Tab(firstTabEl)
@@ -46,6 +56,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+    console.log('Initial setup complete. Buttons should be clickable now.'); // Debug: Initial setup done
 });
 
 // 显示 Toast 通知 (用于一般性短暂提示)
@@ -86,7 +97,7 @@ function showKeywordAlertModal(message) {
     }
     const keywordAlertModal = new bootstrap.Modal(document.getElementById('keywordAlertModal'));
     keywordAlertModal.show();
-    console.log("关键字模态对话框已尝试显示。"); // Debug: 确认 show() 被调用
+    console.log("关键字模态对话框已尝试显示。"); // Debug:确认 show() 被调用
 }
 
 
@@ -211,7 +222,6 @@ function copyToClipboard(text) {
 // ---- 文本处理辅助函数和常量 ----
 
 // 全局定义更全面的空白字符集（用于字符类）
-// 包含 \s (标准空白), 零宽度字符, 不间断空格, Ogham Space Mark, 各种em/thin空格, 数学空格等
 const ALL_WHITESPACE_CHARS_SET = '\\s\\u200B\\u200C\\u200D\\uFEFF\\u00A0\\u1680\\u2000-\\u200A\\u202F\\u205F\\u3000'; 
 
 // 定义匹配零个或多个这类空白字符的字符串（用于构建正则表达式）
@@ -221,17 +231,20 @@ const MANDATORY_WHITESPACE_STR = `[${ALL_WHITESPACE_CHARS_SET}]+`;
 
 // 全局正则表达式：用于替换一个或多个空白字符为单个空格 (或在某些情况下彻底移除)
 const WHITESPACE_TO_SINGLE_SPACE_REGEX = new RegExp(MANDATORY_WHITESPACE_STR, 'g');
-const WHITESPACE_TO_REMOVE_REGEX_ALL = new RegExp(MANDATORY_WHITESPACE_STR, 'g'); // 别名，用于彻底移除所有空格
+const WHITESPACE_TO_REMOVE_REGEX_ALL = new RegExp(MANDATORY_WHITESPACE_STR, 'g');
 
 
 // 全局定义用于识别行首序号的基础正则表达式（无锚点，方便在Lookahead中使用）
 // 匹配您提供的八种格式，以及其他常见序号
 // 注意：此正则不再匹配明确的年份格式，年份由 LEADING_YEAR_PATTERN_REGEX 独立处理
 const LEADING_NUMBER_PATTERN_BASE = '(?:' +
-    '(?<!20\\d{2})\\d+[.\\uFF0E)）、]?|' + // 1. (半角或全角点) or 1) or 1、 or 1 (数字后跟点、括号或顿号，或仅数字), 排除20XX开头
+    // (?!20\\d{2}[年年度]) 负向先行断言确保不是20XX年/年度开头的数字
+    // \\d+[.\\uFF0E)））、]? 匹配数字后跟点、全角点、右括号、全角右括号、顿号
+    '(?!20\\d{2}[年年度])\\d+[.\\uFF0E)））、]?|' + 
+    '[一二三四五六七八九十]+、|' + // 识别“一、二、”这种中文数字带顿号的序号
     '[(\uFF08][\\d一二三四五六七八九十]{1,2}[)\uFF09]、?|' + // (1)、（1）、(一)、（一） and their versions with trailing 、
     '[\\u2460-\\u2473\\u24EB-\\u24F4]|' + // circled numbers ①②③
-    '[a-zA-Z]\\.?|' + // a. or a
+    '[a-zA-Z][.\\uFF0E)）]?|' + // a., A), (a) (simplified to match single letter with optional punctuation)
     '第\\s*\\d+\\s*条?' + // 第1条
 ')';
 // 全局定义用于匹配行首序号的完整正则表达式（带行首锚点和可选空白），用于删除或判断
@@ -239,6 +252,22 @@ const LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX = new RegExp(`^${OPTIONAL_WHITESP
 
 // 全局定义用于识别行首年份的正则表达式 (20XX年/年度)
 const LEADING_YEAR_PATTERN_REGEX = new RegExp(`^${OPTIONAL_WHITESPACE_STR}(20\\d{2}[年年度])${OPTIONAL_WHITESPACE_STR}`);
+
+// 定义用于两级序号智能识别的模式分类（用于判断当前行属于哪种"输入"模式）
+// 这些模式用于帮助判断一行是否是“明确的一级”或“明确的二级”
+const LEVEL1_CANDIDATE_PATTERNS = [
+    /^\s*\d+[.\uFF0E]/, // 1. , 1．
+    /^\s*[一二三四五六七八九十]+、/, // “一、二、”作为明确的一级序号候选
+    /^\s*[(\uFF08][\d一二三四五六七八九十]{1,2}[)\uFF09]/, // (1), （1）, (一), （一）
+    /^\s*[a-zA-Z][.\uFF0E]/, // A. , a.
+    /^\s*第\s*\d+\s*条/ // 第1条
+];
+
+const LEVEL2_CANDIDATE_PATTERNS = [
+    /^\s*\d+[)）]/, // 1) , 1）
+    /^\s*[\u2460-\u2473\\u24EB-\\u24F4]/, // ①
+    /^\s*[a-zA-Z][)）]/ // a) , a）
+];
 
 
 // 辅助函数：标准化文本中的所有空白字符为单个空格，并移除首尾空格
@@ -265,7 +294,7 @@ function remove_leading_patterns_and_standardize_spaces_smart(line) {
     if (year_match) {
         // 如果是年份行，保留年份部分，并处理年份后面的内容
         // year_match[1] 是捕获的年份字符串本身 (如 "2025年")
-        // standardized_line.substring(year_match[0].length) 是年份及后面空白之后的所有内容
+        // year_match[0].length 是匹配到的完整前缀长度，包括前导和尾随空白
         let content_after_year = standardized_line.substring(year_match[0].length);
         // 对年份后面的内容进行内部空格标准化并去首尾空
         let processed_content_after_year = standardize_internal_whitespace_to_single(content_after_year);
@@ -280,18 +309,21 @@ function remove_leading_patterns_and_standardize_spaces_smart(line) {
     return standardize_internal_whitespace_to_single(cleaned_line);
 }
 
-// 辅助函数：确保字符串以中文句号“。”结尾，并移除已存在的常见句末标点（包括冒号、分号）
-function ensure_chinese_period(text) {
+// 辅助函数：确保字符串以中文句号“。”结尾，并移除已存在的常见句末标点（包括冒号、分号）。
+// 注意：此函数不处理冒号结尾的标题行，因为那些应该保持冒号。
+function standardize_end_punctuation_for_numbered_items(text) {
     text = text.trim();
     if (!text) return '';
-
-    // 移除字符串末尾可能存在的任何英文或中文句末标点符号，包括冒号和分号
-    // 匹配的标点符号：. , ; ! ? 。 ？ ！ ； ：
-    text = text.replace(/[.,;!?。？！；：]$/, '');
-    // 添加中文句号
-    text += '。';
+    // 移除已存在的句末标点，但保留冒号结尾的标题行
+    // 匹配的标点符号：. , ; ! ? 。 ？ ！ ； （不包括 ：）
+    text = text.replace(/[.,;!?。？！；]$/, ''); 
+    // 如果文本不以冒号结尾，则添加中文句号
+    if (!text.endsWith('：')) {
+        text += '。';
+    }
     return text;
 }
+
 
 // 检查文本中是否含有特定关键字并弹框提示
 function checkAndAlertKeywords(text) {
@@ -331,150 +363,281 @@ function checkAndAlertKeywords(text) {
     return false; // 没有关键字被发现
 }
 
-// ---- 英文标点符号转换为中文标点符号函数 ----
+// ---- 英文标点符号转换为中文标点符号函数 (已优化，防止URL/时间被破坏) ----
 function replaceEnglishPunctuationToChinese(text) {
-    // 1. 存储 URLs 和 Times，并用占位符替换
-    const placeholders = {};
-    let placeholderId = 0;
+    // Pattern to match URLs and Times (exempt from conversion)
+    const exempt_pattern = /(https?:\/\/[^\s]+|ftp:\/\/[^\s]+|www\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?(?:[?#][^\s]*)?|\b\d{1,2}:\d{2}(?::\d{2})?\b)/gi;
 
-    // Pattern to match URLs and Times (e.g., 23:00, 10:30:45)
-    // URLs: https?://\S+ | www\.\S+ | \b[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:/[^\s]*)?\b (more general for www.example.com without http)
-    // Times: \b\d{1,2}:\d{2}(?::\d{2})?\b (handles HH:MM or HH:MM:SS)
-    const exempt_pattern = /(https?:\/\/[^\s]+|ftp:\/\/[^\s]+|www\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?|\b\d{1,2}:\d{2}(?::\d{2})?\b)/gi; // Added ftp, made case-insensitive for URLs
+    let result_parts = [];
+    let lastIndex = 0;
+    let match;
 
-    let text_with_placeholders = text.replace(exempt_pattern, (match) => {
-        const id = `__EXEMPT_${placeholderId++}__`;
-        placeholders[id] = match;
-        return id;
-    });
+    // Use `exec` in a loop to get all matches and their indices
+    while ((match = exempt_pattern.exec(text)) !== null) {
+        // Process the non-exempt part before the current match
+        if (match.index > lastIndex) {
+            let non_exempt_text = text.substring(lastIndex, match.index);
+            // Convert punctuation in non-exempt text
+            let converted_segment = non_exempt_text;
 
-    // 2. 执行标点符号转换
-    let converted_text = text_with_placeholders;
+            // Order matters for multi-character replacements (longest first)
+            converted_segment = converted_segment.replace(/---/g, '——'); // Triple hyphen to double em dash
+            converted_segment = converted_segment.replace(/--/g, '——'); // Double hyphen to em dash
+            converted_segment = converted_segment.replace(/\.{3,}/g, '…'); // Three or more dots to ellipsis
 
-    // 直接替换的单字符标点
-    converted_text = converted_text
-        .replace(/\./g, '。') // Period
-        .replace(/,/g, '，') // Comma
-        .replace(/:/g, '：') // Colon
-        .replace(/;/g, '；') // Semicolon
-        .replace(/\?/g, '？') // Question mark
-        .replace(/!/g, '！') // Exclamation mark
-        .replace(/%/g, '％') // Percent
-        .replace(/~/g, '～') // Tilde
-        .replace(/\$/g, '＄') // Dollar
-        .replace(/#/g, '＃') // Hash
-        .replace(/@/g, '＠') // At
-        .replace(/_/g, '＿') // Underscore
-        .replace(/\^/g, '＾'); // Caret
+            // Replace single quotes and double quotes (stateful replacement for proper open/close)
+            let tempInDoubleQuote = false; // Reset for each segment
+            converted_segment = converted_segment.replace(/"/g, () => {
+                tempInDoubleQuote = !tempInDoubleQuote; // Simple toggle
+                return tempInDoubleQuote ? '“' : '”';
+            });
+            let tempInSingleQuote = false; // Reset for each segment
+            converted_segment = converted_segment.replace(/'/g, () => {
+                tempInSingleQuote = !tempInSingleQuote; // Simple toggle
+                return tempInSingleQuote ? '‘' : '’';
+            });
 
-    // 替换括号，使用用户示例的 〔〕
-    converted_text = converted_text
-        .replace(/\(/g, '（')
-        .replace(/\)/g, '）')
-        .replace(/\[/g, '〔')
-        .replace(/\]/g, '〕')
-        .replace(/\{/g, '｛')
-        .replace(/\}/g, '｝');
 
-    // 替换连字符和破折号
-    converted_text = converted_text.replace(/---/g, '——'); // Triple hyphen to double em dash
-    converted_text = converted_text.replace(/--/g, '——'); // Double hyphen to em dash
-    converted_text = converted_text.replace(/-/g, '－'); // Single hyphen to full-width hyphen (if not part of a double hyphen)
+            // Replace other single character punctuation
+            converted_segment = converted_segment
+                .replace(/\./g, '。') // Period
+                .replace(/,/g, '，') // Comma
+                .replace(/:/g, '：') // Colon
+                .replace(/;/g, '；') // Semicolon
+                .replace(/\?/g, '？') // Question mark
+                .replace(/!/g, '！') // Exclamation mark
+                .replace(/\(/g, '（') // Left parenthesis
+                .replace(/\)/g, '）') // Right parenthesis
+                .replace(/\[/g, '〔') // Left bracket
+                .replace(/\]/g, '〕') // Right bracket
+                .replace(/\{/g, '｛') // Left brace
+                .replace(/\}/g, '｝') // Right brace
+                .replace(/%/g, '％') // Percent
+                .replace(/~/g, '～') // Tilde
+                .replace(/\$/g, '＄') // Dollar
+                .replace(/#/g, '＃') // Hash
+                .replace(/@/g, '＠') // At
+                .replace(/\//g, '／') // Slash
+                .replace(/\\/g, '＼') // Backslash
+                .replace(/\^/g, '＾') // Caret
+                .replace(/_/g, '＿') // Underscore
+                .replace(/-/g, '－'); // Single hyphen (after longer hyphens handled)
 
-    // 替换省略号
-    converted_text = converted_text.replace(/\.{3,}/g, '…'); // Three or more dots to ellipsis
-
-    // 替换引号 (交替匹配，适用于简单场景)
-    // 注意：这种交替替换对于复杂嵌套引号或未闭合引号可能不完美
-    let inDoubleQuote = false;
-    converted_text = converted_text.replace(/"/g, () => {
-        inDoubleQuote = !inDoubleQuote;
-        return inDoubleQuote ? '“' : '”';
-    });
-    let inSingleQuote = false;
-    converted_text = converted_text.replace(/'/g, () => {
-        inSingleQuote = !inSingleQuote;
-        return inSingleQuote ? '‘' : '’';
-    });
-    
-    // 替换斜杠 (谨慎，因为URL中也有)
-    // 确保URL中的 / 不被替换，但由于占位符机制，这里应该安全
-    converted_text = converted_text.replace(/\//g, '／');
-
-    // 3. 恢复占位符
-    for (const id in placeholders) {
-        converted_text = converted_text.replace(new RegExp(id, 'g'), placeholders[id]);
+            result_parts.push(converted_segment);
+        }
+        // Add the exempt part (unmodified)
+        result_parts.push(match[0]);
+        lastIndex = exempt_pattern.lastIndex;
+    }
+    // Add any remaining non-exempt part after the last match
+    if (lastIndex < text.length) {
+        let non_exempt_text = text.substring(lastIndex);
+        let converted_segment = non_exempt_text;
+        
+        // Similar punctuation conversion for the remainder
+        converted_segment = converted_segment.replace(/---/g, '——');
+        converted_segment = converted_segment.replace(/--/g, '——');
+        converted_segment = converted_segment.replace(/\.{3,}/g, '…');
+        let tempInDoubleQuote = false;
+        converted_segment = converted_segment.replace(/"/g, () => { tempInDoubleQuote = !tempInDoubleQuote; return tempInDoubleQuote ? '“' : '”'; });
+        let tempInSingleQuote = false;
+        converted_segment = converted_segment.replace(/'/g, () => { tempInSingleQuote = !tempInSingleQuote; return tempInSingleQuote ? '‘' : '’'; });
+        converted_segment = converted_segment
+            .replace(/\./g, '。').replace(/,/g, '，').replace(/:/g, '：').replace(/;/g, '；')
+            .replace(/\?/g, '？').replace(/!/g, '！').replace(/\(/g, '（').replace(/\)/g, '）')
+            .replace(/\[/g, '〔').replace(/\]/g, '〕').replace(/\{/g, '｛').replace(/\}/g, '｝')
+            .replace(/%/g, '％').replace(/~/g, '～').replace(/\$/g, '＄').replace(/#/g, '＃')
+            .replace(/@/g, '＠').replace(/\//g, '／').replace(/\\/g, '＼')
+            .replace(/\^/g, '＾').replace(/_/g, '＿').replace(/-/g, '－');
+        
+        result_parts.push(converted_segment);
     }
 
-    return converted_text;
+    return result_parts.join('');
 }
 
 
 // ---- 文本处理功能函数 ----
 
 // 统一处理带序号列表的辅助函数
-function process_numbered_list(text, number_format_type, is_two_level = false) {
+function process_numbered_list(text, number_format_type, is_two_level_requested = false) {
     const lines = text.split('\n');
     const result_lines = [];
     let current_num_level1 = 1;
     let current_num_level2 = 1;
-    let is_first_actual_content_line_processed = false; // 标记是否已经处理过第一个非空行 (无论是不是标题行)
 
-    for (let line of lines) {
-        let original_line_for_indent = line; // 保留原始行用于计算缩进
-        // 对当前行进行初步的空格标准化
-        let processed_line_content_standardized = standardize_internal_whitespace_to_single(line);
+    let current_processing_state = 'MAIN_LEVEL'; // 'MAIN_LEVEL' or 'SUB_LEVEL_MODE'
+
+    let first_actual_line_handled = false; // Tracks if the very first non-empty line has been processed specially or normally
+
+    // --- Pre-scan for Two-Level determination (only if is_two_level_requested is true) ---
+    let actual_two_level_conversion_needed = false;
+    if (is_two_level_requested) {
+        let found_l1_pattern_count = 0;
+        let found_l2_pattern_count = 0;
+        // Count distinct pattern types (L1 vs L2)
+        const scan_limit = Math.min(lines.length, 50); // Scan first 50 lines for efficiency
+        for (let i = 0; i < scan_limit; i++) {
+            const line_to_scan = lines[i];
+            if (!line_to_scan.trim()) continue; // Skip empty lines during scan
+
+            // Check for Level 1 candidate patterns
+            if (LEVEL1_CANDIDATE_PATTERNS.some(p => p.test(line_to_scan))) {
+                found_l1_pattern_count++;
+            }
+            // Check for Level 2 candidate patterns
+            if (LEVEL2_CANDIDATE_PATTERNS.some(p => p.test(line_to_scan))) {
+                found_l2_pattern_count++;
+            }
+            // If both types are found early, no need to scan further
+            if (found_l1_pattern_count > 0 && found_l2_pattern_count > 0) {
+                actual_two_level_conversion_needed = true;
+                break;
+            }
+        }
+
+        // Refined fallback logic:
+        // If only one type of pattern or no patterns were found, we will fall back to single-level (level1 format)
+        if (found_l1_pattern_count > 0 && found_l2_pattern_count === 0) {
+            // Only L1-like patterns found, or L1 plus some non-L2 patterns. Force single-level L1 format.
+            actual_two_level_conversion_needed = false;
+            number_format_type = 'level1';
+        } else if (found_l1_pattern_count === 0 && found_l2_pattern_count > 0) {
+            // Only L2-like patterns found. Force single-level L1 format as standard output.
+            actual_two_level_conversion_needed = false;
+            number_format_type = 'level1';
+        } else if (found_l1_pattern_count === 0 && found_l2_pattern_count === 0) {
+            // No recognizable patterns at all. Process as plain text or default L1.
+            actual_two_level_conversion_needed = false; // No complex two-level logic needed
+            // The default number_format_type will be 'level1' if this function is called from convert_two_level_numbers
+            // which handles the numbering if there are plain lines or no patterns.
+        }
+        // If actual_two_level_conversion_needed remains true, it means both L1 and L2 patterns were detected.
+    }
+
+
+    for (let i = 0; i < lines.length; i++) {
+        const original_line = lines[i];
+        let processed_line_content_standardized = standardize_internal_whitespace_to_single(original_line);
 
         if (!processed_line_content_standardized) {
-            continue; // 跳过空行（标准化后仍为空的行）
+            continue; 
         }
 
-        // --- 首行特殊处理逻辑 (仅在第一次遇到非空行时执行) ---
-        if (!is_first_actual_content_line_processed) {
-            // 尝试移除该行可能带有的序号，得到一个“更纯净”的内容来判断是否为标题行
-            // 这里使用 remove_leading_patterns_and_standardize_spaces_smart 来处理，它会保留年份
-            let content_without_leading_num_for_check = remove_leading_patterns_and_standardize_spaces_smart(processed_line_content_standardized);
-            
-            // 判断原始行是否以可识别的序号开头 (不包括年份开头)
-            let starts_with_recognizable_number_excluding_year = LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX.test(processed_line_content_standardized) && !LEADING_YEAR_PATTERN_REGEX.test(processed_line_content_standardized);
+        const current_indent = original_line.match(/^\s*/)[0].length;
+        const is_current_line_numbered_any_format = LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX.test(original_line) || LEADING_YEAR_PATTERN_REGEX.test(original_line); 
+        const ends_with_colon = processed_line_content_standardized.endsWith('：');
+        
+        let should_output_as_level1 = false;
+        let should_output_as_level2 = false;
+        let should_output_as_plain_text = false; // Flag for lines that should not be numbered
 
-            // 如果该行不以可识别的序号开头 (包括年份也不算)，并且其内容（去除潜在序号后）以中文冒号‘：’结尾且非空
-            if (!starts_with_recognizable_number_excluding_year && !LEADING_YEAR_PATTERN_REGEX.test(processed_line_content_standardized) && content_without_leading_num_for_check.endsWith('：') && content_without_leading_num_for_check.length > 1) {
-                // 这是一个符合条件的“标题行”：直接添加其标准化后的内容，保留冒号，不加新序号
+        // --- Universal First Content Line Special Handling (for ANY numbering function) ---
+        // This check must happen for the *very first* non-empty line of the input.
+        if (!first_actual_line_handled) {
+            if (ends_with_colon && !is_current_line_numbered_any_format) {
+                // This is a pure title line (ends with colon, no existing number).
+                // Add it as is, preserve its colon, do NOT number it.
                 result_lines.push(processed_line_content_standardized);
-                is_first_actual_content_line_processed = true; // 标记已处理第一个有内容的行
-                continue; // 跳过此行的序号添加逻辑
+                first_actual_line_handled = true; 
+                // If it's a two-level requested context, this title line initiates sub-level mode.
+                if (is_two_level_requested && actual_two_level_conversion_needed) {
+                     current_processing_state = 'SUB_LEVEL_MODE';
+                     console.log(`Line ${i+1}: Detected L1 Title. State: ${current_processing_state}`);
+                }
+                continue; // Skip all further processing for this line.
             }
-            is_first_actual_content_line_processed = true; // 如果不是标题行，也标记已检查，后续正常编号
+            first_actual_line_handled = true; // For the first line, if not a title, it will be numbered normally below.
         }
 
-        // --- 正常编号逻辑 (适用于非标题行) ---
-        // 使用新的智能函数来移除行开头可能存在的旧序号（但保留年份），并标准化内部空格
-        let cleaned_content_for_numbering = remove_leading_patterns_and_standardize_spaces_smart(processed_line_content_standardized);
-        // 确保行末有句号 (这里会处理掉冒号，因为这不是标题行)
-        cleaned_content_for_numbering = ensure_chinese_period(cleaned_content_for_numbering);
+        // --- Core Logic for Numbering or Plain Text for subsequent lines ---
+        // First, get content after removing potential old numbers/years.
+        let content_after_prefix_removal = remove_leading_patterns_and_standardize_spaces_smart(processed_line_content_standardized);
 
-        if (is_two_level) {
-            const current_indent_match = original_line_for_indent.match(/^\s*/); // 使用原始行计算缩进
-            const current_indent = current_indent_match ? current_indent_match[0].length : 0;
-
-            if (current_indent === 0) { // 一级标题 (无缩进)
-                result_lines.push(`（${current_num_level1}）${cleaned_content_for_numbering}`);
-                current_num_level1 += 1;
-                current_num_level2 = 1; // 重置二级序号
-            } else { // 二级标题 (有缩进)
-                const circled_num = current_num_level2 <= 20 ? String.fromCharCode(0x2460 + current_num_level2 - 1) : `[${current_num_level2}]`;
-                result_lines.push(`${' '.repeat(current_indent)}${circled_num}${cleaned_content_for_numbering}`);
-                current_num_level2 += 1;
+        if (is_two_level_requested && actual_two_level_conversion_needed) { 
+            // --- Complex Two-Level Logic ---
+            // Rule A: A numbered line ending with a colon (if not already handled by universal first line rule) is an L1 header.
+            // This is primarily for L1s that are *not* the very first line but are L1 headers (e.g., '2. 具体如下：')
+            if (is_current_line_numbered_any_format && ends_with_colon) { 
+                should_output_as_level1 = true;
+                current_processing_state = 'SUB_LEVEL_MODE'; 
+            } 
+            // Rule B: If in SUB_LEVEL_MODE and current line is numbered, it's an L2 item, *unless* it's a clear new L1.
+            else if (current_processing_state === 'SUB_LEVEL_MODE' && is_current_line_numbered_any_format) {
+                // A clear new L1 is a LEVEL1_CANDIDATE_PATTERN at indent 0 (like '三、' or '(3)') and not ending with a colon (Rule A covers colon).
+                const is_clear_new_L1_pattern = LEVEL1_CANDIDATE_PATTERNS.some(p => p.test(original_line)) && current_indent === 0;
+                
+                if (is_clear_new_L1_pattern) { 
+                    should_output_as_level1 = true;
+                    current_processing_state = 'MAIN_LEVEL'; // Exit sub-level mode
+                } else {
+                    should_output_as_level2 = true;
+                }
             }
-        } else { // 单级序号 (一级或二级)
+            // Rule C: If current line has a clear L1 pattern at indent 0 (and is not an L1 header with colon).
+            // This handles L1s that are not headers and signifies a new main point and exits any sub-level mode.
+            else if (LEVEL1_CANDIDATE_PATTERNS.some(p => p.test(original_line)) && current_indent === 0) {
+                should_output_as_level1 = true;
+                current_processing_state = 'MAIN_LEVEL'; 
+            }
+            // Rule D: If current line has a clear L2 pattern OR has significant indent (>0).
+            // This also implies exiting any implicit L1 sequence, as it's a L2 item.
+            else if (LEVEL2_CANDIDATE_PATTERNS.some(p => p.test(original_line)) || current_indent > 0) {
+                should_output_as_level2 = true;
+                current_processing_state = 'MAIN_LEVEL'; 
+            }
+            // Rule E: Fallback - If it's a numbered line but didn't fit (shouldn't happen often with comprehensive rules)
+            else if (is_current_line_numbered_any_format) {
+                should_output_as_level1 = true;
+                current_processing_state = 'MAIN_LEVEL'; 
+            }
+            // Rule F: If not numbered at all (and not the special first title line)
+            else {
+                should_output_as_plain_text = true;
+                current_processing_state = 'MAIN_LEVEL'; // Exit sub-section if non-numbered line encountered
+            }
+
+            // Apply numbering/formatting based on determined level for actual_two_level_conversion_needed
+            if (should_output_as_level1) {
+                const final_content = standardize_end_punctuation_for_numbered_items(content_after_prefix_removal);
+                result_lines.push(`（${current_num_level1}）${final_content}`);
+                current_num_level1 += 1;
+                current_num_level2 = 1; 
+                console.log(`Line ${i+1}: Output as L1: (${current_num_level1-1}). Next L1: ${current_num_level1}. Next L2: ${current_num_level2}. State: ${current_processing_state}`); // Debug
+            } else if (should_output_as_level2) {
+                const circled_num = current_num_level2 <= 20 ? String.fromCharCode(0x2460 + current_num_level2 - 1) : `[${current_num_level2}]`;
+                const indent_string = current_indent > 0 ? ' '.repeat(current_indent) : '  '; 
+                const final_content = standardize_end_punctuation_for_numbered_items(content_after_prefix_removal);
+                result_lines.push(`${indent_string}${circled_num}${final_content}`);
+                current_num_level2 += 1;
+                console.log(`Line ${i+1}: Output as L2: ${circled_num}. Next L2: ${current_num_level2}. State: ${current_processing_state}`); // Debug
+           } else if (should_output_as_plain_text) {
+                result_lines.push(processed_line_content_standardized); // Add as is, no numbering, no forced period.
+            } else {
+                console.warn(`Unhandled logical path for line ${i+1} in two-level mode; added as plain text: ${original_line}`);
+                result_lines.push(processed_line_content_standardized); // Fallback for safety
+            }
+
+        } else { // Single level numbering (if not two-level requested, or fell back from two-level)
+            // Rule G: If the line should not be numbered (i.e., it's plain text and not the special first title line).
+            if (!is_current_line_numbered_any_format) {
+                result_lines.push(processed_line_content_standardized); // Add as is
+                continue; // Skip numbering logic
+            }
+            
+            // Rule H: If it IS numbered, apply the requested single-level numbering format.
+            const final_content = standardize_end_punctuation_for_numbered_items(content_after_prefix_removal); // Always add period for numbered items
             if (number_format_type === 'level1') {
-                result_lines.push(`（${current_num_level1}）${cleaned_content_for_numbering}`);
+                result_lines.push(`（${current_num_level1}）${final_content}`);
                 current_num_level1 += 1;
-            } else if (number_format_type === 'level2') {
+            } 
+            else if (number_format_type === 'level2') {
                 const circled_num = current_num_level1 <= 20 ? String.fromCharCode(0x2460 + current_num_level1 - 1) : `[${current_num_level1}]`;
-                result_lines.push(`${circled_num}${cleaned_content_for_numbering}`);
+                result_lines.push(`${circled_num}${final_content}`);
                 current_num_level1 += 1;
+            } else {
+                 console.warn(`Unhandled single-level numbering path for line ${i+1}: ${original_line}`);
+                 result_lines.push(processed_line_content_standardized); // Fallback
             }
         }
     }
@@ -483,17 +646,17 @@ function process_numbered_list(text, number_format_type, is_two_level = false) {
 
 // 一级序号转换：转换为（1）（2）…格式
 function convert_level1_numbers(text) {
-    return process_numbered_list(text, 'level1');
+    return process_numbered_list(text, 'level1', false); // Not two-level requested
 }
 
 // 二级序号转换：转换为①②③…格式
 function convert_level2_numbers(text) {
-    return process_numbered_list(text, 'level2');
+    return process_numbered_list(text, 'level2', false); // Not two-level requested
 }
 
 // 两级序号转换：一级（1）（2）...，二级①②...
 function convert_two_level_numbers(text) {
-    return process_numbered_list(text, 'twolevel', true);
+    return process_numbered_list(text, 'level1', true); // Pass true for is_two_level_requested, default type is level1 for fallback
 }
 
 
@@ -524,7 +687,7 @@ function add_br_tags(text) {
         if (stripped_line) { // 只处理非空行
             // 此功能不移除行首的序号或前缀，只确保句末有中文句号，然后追加 <br>
             // 注意：这里不能调用 remove_leading_patterns_and_standardize_spaces_smart，因为此功能不应移除序号或年份
-            const processed_sentence = ensure_chinese_period(stripped_line); // 确保句末有句号
+            const processed_sentence = standardize_end_punctuation_for_numbered_items(stripped_line); // 确保句末有句号
             result_lines.push(processed_sentence + '<br>');
         }
     }
@@ -549,12 +712,12 @@ function smart_process_text(text) {
     text = replaceEnglishPunctuationToChinese(text);
 
     const original_lines = text.split('\n');
-    // 检查原始文本中是否包含任何识别的序号或年份前缀
+    // 检查处理后的文本中是否包含任何识别的序号或年份前缀
     const has_prefixes = original_lines.some(line => line.trim() && (LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX.test(line) || LEADING_YEAR_PATTERN_REGEX.test(line)));
 
     if (has_prefixes) {
         // 场景 A: 输入文本含有序号或年份前缀
-        // 目标：对全文进行彻底去空格和换行，并根据原有序号（或年份）进行分段，保留原有序号/年份，每段独立一行，确保句末有句号。
+        // 目标：对全文进行彻底去空格和换行，并根据原有序号（或年份）和句末标点进行分段，保留原有序号/年份，每段独立一行，并确保句末有句号。
         
         // 1. 将所有非空行合并成一个字符串，并彻底去除所有空白（包括单词间的）
         let flattened_text_all_whitespace_removed = remove_all_internal_whitespace(
@@ -563,20 +726,41 @@ function smart_process_text(text) {
 
         // 2. 定义分段的正则表达式。
         // 分段点：在句号、问号、叹号、分号或冒号之后，如果紧跟着可选空白和一个序号模式（包括年份模式），则在此处分段。
-        // 使用Lookbehind (?<=[。？！；：]) 确保标点留在前一个句子中。
-        // 使用Lookahead (?=${OPTIONAL_WHITESPACE_STR}(?:${LEADING_NUMBER_PATTERN_BASE_NO_EXCLUSION}|20\\d{2}[年年度])) 确保序号/年份是分段的依据，但序号/年份本身不被分割掉。
-        // 由于 LEADING_NUMBER_PATTERN_BASE_NO_EXCLUSION 包含了所有数字，所以简化一下
+        const full_leading_pattern_for_split = '(?:' +
+            '\\d+[.\\uFF0E)））、]?|' + // 包含所有数字序号 (更新以包含全角右括号和顿号)
+            '[一二三四五六七八九十]+、|' + // 识别“一、二、”这种中文数字带顿号的序号
+            '[(\uFF08][\\d一二三四五六七八九十]{1,2}[)\uFF09]、?|' + 
+            '[\\u2460-\\u2473\\u24EB-\\u24F4]|' +
+            '[a-zA-Z][.\\uFF0E)）]?|' + // 匹配字母序号，例如 A. 或 a)
+            '第\\s*\\d+\\s*条?|' +
+            '20\\d{2}[年年度]' + // 明确加上年份模式
+        ')';
         const smart_segment_split_regex = new RegExp(
-            `(?<=[。？！；：])${OPTIONAL_WHITESPACE_STR}(?=(?:\\d+[.\\uFF0E)）、]?|[(\uFF08][\\d一二三四五六七八九十]{1,2}[)\uFF09]、?|[\\u2460-\\u2473\\u24EB-\\u24F4]|[a-zA-Z]\\.?|第\\s*\\d+\\s*条?|20\\d{2}[年年度]))`, 'g'
+            `(?<=[。？！；：])${OPTIONAL_WHITESPACE_STR}(?=${full_leading_pattern_for_split})`, 'g'
         );
+
         let segments = flattened_text_all_whitespace_removed.split(smart_segment_split_regex);
         
         const result_segments = [];
         for (let segment of segments) {
             segment = segment.trim();
             if (segment) {
-                // 确保每个分段以中文句号结尾
-                result_segments.push(ensure_chinese_period(segment));
+                // For smart processing, if it contains a leading number, we want to ensure it ends with a period.
+                // If it's a plain segment, we just add it as is.
+                // This function should generally ensure periods for numbered items, not touch colons.
+                const is_segment_numbered = LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX.test(segment) || LEADING_YEAR_PATTERN_REGEX.test(segment);
+                if (is_segment_numbered) {
+                    result_segments.push(standardize_end_punctuation_for_numbered_items(segment));
+                } else {
+                    // For non-numbered segments in smart mode, we want to preserve original punctuation,
+                    // but ensure it ends with a period if it looks like a sentence.
+                    // This is a heuristic. We'll simplify to just adding a period if it doesn't end with one already.
+                    if (!/[。？！；：.]$/.test(segment)) { // Check for common end punctuation
+                       result_segments.push(segment + '。');
+                    } else {
+                        result_segments.push(segment);
+                    }
+                }
             }
         }
         return result_segments.join('\n'); // 最终用换行符连接，使每个分段独立成行
@@ -585,7 +769,7 @@ function smart_process_text(text) {
         // 目标：对全文进行彻底去空格和换行，将所有内容合并为一行，不修改标点（因为标点转换已在上一步完成）。
         
         // 1. 将所有非空行合并成一个字符串，并彻底去除所有空白（包括单词间的）
-        let full_text_single_line = original_lines.filter(line => line.trim()).map(line => line.trim()).join('');
+        let full_text_single_line = remove_all_internal_whitespace(original_lines.filter(line => line.trim()).map(line => line.trim()).join(''));
         
         // 2. 再次确保彻底移除所有剩余的空白
         let final_text = remove_all_internal_whitespace(full_text_single_line);
@@ -624,9 +808,6 @@ function processText(tabId) {
             case 'addbr':
                 result = add_br_tags(inputText);
                 break;
-            // case 'segment': // "文本分段"功能已移除
-            //     result = segment_text(inputText);
-            //     break;
             case 'smart':
                 result = smart_process_text(inputText);
                 break;
