@@ -5,7 +5,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     try {
         // 关键检查：确保 Bootstrap JavaScript 已经加载并可用
-        if (typeof bootstrap === 'undefined' || typeof bootstrap.Tab === 'undefined' || typeof bootstrap.Tab === 'undefined' || typeof bootstrap.Toast === 'undefined' || typeof bootstrap.Modal === 'undefined') { // 修复了这里重复的Tab检查
+        // 修复了这里重复的Tab检查
+        if (typeof bootstrap === 'undefined' || typeof bootstrap.Tab === 'undefined' || typeof bootstrap.Toast === 'undefined' || typeof bootstrap.Modal === 'undefined') {
             console.error("错误：Bootstrap JavaScript 未加载或初始化成功。请检查 './static/js/bootstrap.bundle.min.js' 路径是否正确且文件未损坏。");
             showNotification("初始化失败：核心组件缺失。请检查浏览器控制台（F12）获取详情。");
             return; // 如果 Bootstrap 未正确加载，则停止进一步的脚本执行
@@ -321,7 +322,7 @@ const WHITESPACE_TO_REMOVE_REGEX_ALL = new RegExp(MANDATORY_WHITESPACE_STR, 'g')
 // 注意：此正则不再匹配明确的年份格式，年份由 LEADING_YEAR_PATTERN_REGEX 独立处理
 const LEADING_NUMBER_PATTERN_BASE = '(?:' +
     // (?!20\\d{2}[年年度]) 负向先行断言确保不是20XX年/年度开头的数字
-    // \\d+[.\uFF0E)））、]? 匹配数字后跟点、全角点、右括号、全角右括号、顿号
+    // \d+[.\uFF0E)））、]? 匹配数字后跟点、全角点、右括号、全角右括号、顿号
     '(?!20\\d{2}[年年度])\\d+[.\uFF0E)））、]?|' + 
     '[一二三四五六七八九十]+、|' + // 识别“一、二、”这种中文数字带顿号的序号
     '[\uFF08][\\d一二三四五六七八九十]{1,2}[\uFF09]、?|' + // (1)、（1）、(一)、（一） and their versions with trailing 、
@@ -374,8 +375,7 @@ function remove_all_internal_whitespace(text) {
 // 辅助函数：移除行开头可能存在的旧序号和多余空格，并确保内容完全紧凑（无空格）。
 // 特殊处理年份，不移除年份。
 function remove_leading_patterns_and_compact_content(line) {
-    // **FIXED:** 统一变量名为 currentCompactedLine，并确保所有引用正确
-    // 首先对整行进行彻底的内部空格移除和首尾去空
+    // 首先对传入的行进行彻底的内部空格移除和首尾去空
     let currentCompactedLine = remove_all_internal_whitespace(line); 
     if (!currentCompactedLine) return '';
 
@@ -583,6 +583,7 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
         let content_after_leading_pattern_removal = remove_leading_patterns_and_compact_content(original_line);
         
         // 确保句末标点标准化，这适用于所有最终会被编号的行，或需要标准化的行。
+        // 它会根据内容是否以冒号结尾来决定加句号还是保留冒号。
         const final_content_with_punctuation = standardize_end_punctuation_for_numbered_items(content_after_leading_pattern_removal);
         
         // 检查原始行的紧凑版是否以中文冒号结尾，用于标题判断。
@@ -595,36 +596,30 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
             const is_explicit_l1_input = TWO_LEVEL_SPECIFIC_L1_INPUT_PATTERN.test(original_line); 
             const is_explicit_l2_input = TWO_LEVEL_SPECIFIC_L2_INPUT_PATTERN.test(original_line); 
 
-            if (ends_with_colon && !is_explicit_l1_input && !is_explicit_l2_input) {
-                // 情况1：以冒号结尾，且没有明确的L1/L2序号，视为标题，不编号。
-                // 输出完全紧凑的原始行内容（保留冒号，不加句号）。
-                result_lines.push(processed_line_content_compacted); 
-                // 标题通常意味着新的一组序号开始，重置计数器
-                current_num_level1 = 1; 
-                current_num_level2 = 1; 
-                console.log(`Unnumbered & ends with colon (Title). Output as plain text. Next L1: ${current_num_level1}, Next L2: ${current_num_level2}.`);
-            } else if (is_explicit_l1_input) {
-                // 情况2：明确检测到输入行是（1）（2）...格式
-                // 此时，使用清理后的内容并重新编号为新的一级序号
-                result_lines.push(`（${current_num_level1}）${final_content_with_punctuation}`);
+            // 判断是否应该作为一级序号处理 (包括显式L1、冒号结尾的未编号行、以及其他未编号行)
+            const should_be_l1 = is_explicit_l1_input || 
+                                 (ends_with_colon && !is_explicit_l2_input) || 
+                                 (!is_explicit_l1_input && !is_explicit_l2_input && !ends_with_colon);
+
+            if (should_be_l1) {
+                // 如果是新的一级序号段落 (包括标题和普通段落)
+                let content_to_use = remove_leading_patterns_and_compact_content(original_line);
+                
+                result_lines.push(`（${current_num_level1}）${standardize_end_punctuation_for_numbered_items(content_to_use)}`);
                 current_num_level1++;
                 current_num_level2 = 1; // 遇到一级序号，二级序号重置
-                console.log(`Matched explicit L1 input. Output as NEW L1. Next L1: ${current_num_level1}, Next L2: ${current_num_level2}.`);
-            } else if (is_explicit_l2_input) {
-                // 情况3：明确检测到输入行是①②...格式
-                // 此时，使用清理后的内容并重新编号为新的二级序号
-                const circled_num = current_num_level2 <= 20 ? String.fromCharCode(0x2460 + current_num_level2 - 1) : `[${current_num_level2}]`;
-                result_lines.push(`${circled_num}${final_content_with_punctuation}`); 
-                current_num_level2++;
-                console.log(`Matched explicit L2 input. Output as NEW L2. Next L1: ${current_num_level1}, Next L2: ${current_num_level2}.`);
-            } else {
-                // 情况4：既不是标题，又无明确L1/L2序号，则视为新的“一级序号”段落，并赋予（1）（2）...格式
-                result_lines.push(`（${current_num_level1}）${final_content_with_punctuation}`);
-                current_num_level1++;
-                current_num_level2 = 1; // 遇到新的一级序号，二级序号重置
-                console.log(`Unnumbered & no colon. Output as NEW L1. Next L1: ${current_num_level1}, Next L2: ${current_num_level2}.`);
-            }
+                console.log(`Output as NEW L1. Next L1: ${current_num_level1}, Next L2: ${current_num_level2}.`);
 
+            } else if (is_explicit_l2_input) {
+                // 如果是明确的二级序号模式
+                let content_to_use = remove_leading_patterns_and_compact_content(original_line);
+                const circled_num = current_num_level2 <= 20 ? String.fromCharCode(0x2460 + current_num_level2 - 1) : `[${current_num_level2}]`;
+                result_lines.push(`${circled_num}${standardize_end_punctuation_for_numbered_items(content_to_use)}`); 
+                current_num_level2++;
+                // L1 计数器不在此处改变
+                console.log(`Output as NEW L2. Next L1: ${current_num_level1}, Next L2: ${current_num_level2}.`);
+            }
+            // 理论上所有非空行都应被上述条件之一捕获，不会有 'else' 块
         } else { // 单级序号模式 (level1, level2) 的逻辑
             
             // 特殊处理单级模式下首行是标题的情况
