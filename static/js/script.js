@@ -320,8 +320,8 @@ const WHITESPACE_TO_REMOVE_REGEX_ALL = new RegExp(MANDATORY_WHITESPACE_STR, 'g')
 // 注意：此正则不再匹配明确的年份格式，年份由 LEADING_YEAR_PATTERN_REGEX 独立处理
 const LEADING_NUMBER_PATTERN_BASE = '(?:' +
     // (?!20\\d{2}[年年度]) 负向先行断言确保不是20XX年/年度开头的数字
-    // \\d+[.\\uFF0E)））、]? 匹配数字后跟点、全角点、右括号、全角右括号、顿号
-    '(?!20\\d{2}[年年度])\\d+[.\\uFF0E)））、]?|' + 
+    // \\d+[.\uFF0E)））、]? 匹配数字后跟点、全角点、右括号、全角右括号、顿号
+    '(?!20\\d{2}[年年度])\\d+[.\uFF0E)））、]?|' + 
     '[一二三四五六七八九十]+、|' + // 识别“一、二、”这种中文数字带顿号的序号
     '[\uFF08][\\d一二三四五六七八九十]{1,2}[\uFF09]、?|' + // (1)、（1）、(一)、（一） and their versions with trailing 、
     '[\u2460-\u2473\u24EB-\u24F4]|' + // circled numbers ①②③
@@ -357,7 +357,7 @@ const TWO_LEVEL_SPECIFIC_L2_INPUT_PATTERN = /^\s*[\u2460-\u2473\u24EB-\u24F4]/; 
 
 
 // 辅助函数：标准化文本中的所有空白字符为单个空格，并移除首尾空格
-// 这是大多数功能所需的“标准化”空格处理，即保留单词间单个空格。
+// 此函数保留，用于需要将连续空白压缩为单个空格的场景 (如快捷复制的文本)。
 function standardize_internal_whitespace_to_single(text) {
     if (!text) return '';
     // 替换所有连续的空白字符（包括各种Unicode空白）为一个空格，并移除首尾空格
@@ -365,34 +365,34 @@ function standardize_internal_whitespace_to_single(text) {
 }
 
 // 辅助函数：移除所有空白字符（包括各种Unicode空白和单词间的空格），使其紧密排列
-// 仅用于需要完全无空格的特定场景（如智能处理的某些模式）。
+// 这是实现“不允许存在空格”的关键，输出完全紧凑的文本。
 function remove_all_internal_whitespace(text) {
     if (!text) return '';
     return text.replace(WHITESPACE_TO_REMOVE_REGEX_ALL, '').trim();
 }
 
-// 辅助函数：移除行开头可能存在的旧序号和多余空格，并标准化剩余内容中的空格为单个空格。
+// 辅助函数：移除行开头可能存在的旧序号和多余空格，并确保内容完全紧凑（无空格）。
 // 特殊处理年份，不移除年份。
-// 此函数现在将使用 `standardize_internal_whitespace_to_single` 来确保内容中只有单个空格。
-function remove_leading_patterns_and_standardize_spaces_smart(line) {
-    // 首先对整行进行初步的内部空格标准化和首尾去空
-    let standardized_line = standardize_internal_whitespace_to_single(line);
-    if (!standardized_line) return ''; // 如果是空行，直接返回空
+// **FIXED:** 此函数现在将使用 `remove_all_internal_whitespace` 来确保内容中没有空格。
+function remove_leading_patterns_and_compact_content(line) {
+    // 首先对整行进行彻底的内部空格移除和首尾去空
+    let compacted_line = remove_all_internal_whitespace(line); 
+    if (!compated_line) return '';
 
     // 尝试匹配行首的年份模式
-    const year_match = standardized_line.match(LEADING_YEAR_PATTERN_REGEX);
+    const year_match = compacted_line.match(LEADING_YEAR_PATTERN_REGEX); 
     if (year_match) {
         // 如果是年份行，保留年份部分，并处理年份后面的内容
         // year_match[1] 是捕获的年份字符串本身 (如 "2025年")
         // year_match[0].length 是匹配到的完整前缀长度，包括前导和尾随空白
-        let content_after_year = standardize_internal_whitespace_to_single(standardized_line.substring(year_match[0].length));
-        return `${year_match[1]}` + (content_after_year ? ` ${content_after_year}` : ''); // 年份和内容之间保留一个空格
+        let content_after_year = remove_all_internal_whitespace(compated_line.substring(year_match[0].length));
+        return `${year_match[1]}` + (content_after_year ? `${content_after_year}` : ''); // 年份和内容之间不留空格
     }
 
     // 如果不是年份行，则尝试移除其他类型的行首序号
-    let cleaned_line = standardized_line.replace(LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX, '');
-    // 对剩余部分进行内部空格标准化和两端去空白
-    return standardize_internal_whitespace_to_single(cleaned_line);
+    let cleaned_line = compacted_line.replace(LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX, '');
+    // 对剩余部分进行内部空格移除和两端去空白
+    return remove_all_internal_whitespace(cleaned_line); // 最终彻底紧凑
 }
 
 // 辅助函数：确保字符串以中文句号“。”结尾，并移除已存在的常见句末标点（包括分号）。
@@ -548,7 +548,7 @@ function replaceEnglishPunctuationToChinese(text) {
 
 // 统一处理带序号列表的辅助函数
 function process_numbered_list(text, number_format_type, is_two_level_requested = false) {
-    // **核心修复：先按原始换行符分割，再对每行内容进行处理。**
+    // **核心修复：先按原始换行符分割，对每一行进行处理，然后跳过空行。**
     const lines = text.split('\n');
     
     const result_lines = [];
@@ -562,30 +562,30 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
     for (let i = 0; i < lines.length; i++) {
         const original_line = lines[i];
 
-        // 对当前行进行初步的空白标准化（转换为单空格，并移除首尾，处理各种空白符）
-        let processed_line_content_standardized = standardize_internal_whitespace_to_single(original_line);
+        // 对当前行进行彻底的空白移除和首尾去空。
+        let processed_line_content_compacted = remove_all_internal_whitespace(original_line);
 
         // 如果处理后为空（即原行是空行或仅包含空白字符），则直接跳过，不添加到结果中。
-        if (!processed_line_content_standardized) {
+        if (!processed_line_content_compacted) {
             console.log(`Line ${i+1}: Empty or all whitespace, skipping.`); // Debug
             continue; 
         }
 
         console.groupCollapsed(`--- Processing Line ${i+1} ---`); // Group console logs
         console.log(`Original: "${original_line}"`);
-        console.log(`Standardized (initial cleanup): "${processed_line_content_standardized}"`);
+        console.log(`Compacted (initial cleanup): "${processed_line_content_compacted}"`);
         console.log(`is_two_level_requested: ${is_two_level_requested}`);
         console.log(`current_num_level1 (before): ${current_num_level1}`);
         console.log(`current_num_level2 (before): ${current_num_level2}`);
 
-        // Content after removing old numbers/years and standardizing spaces.
-        let content_after_leading_pattern_removal = remove_leading_patterns_and_standardize_spaces_smart(original_line);
+        // 获取去除序号且完全紧凑的纯文本内容
+        let content_after_leading_pattern_removal = remove_leading_patterns_and_compact_content(original_line);
         
         // 确保句末标点标准化，这适用于所有最终会被编号的行，或需要标准化的行。
         const final_content_with_punctuation = standardize_end_punctuation_for_numbered_items(content_after_leading_pattern_removal);
         
-        // 检查标准化后的行内容是否以中文冒号结尾，用于标题判断
-        const ends_with_colon = processed_line_content_standardized.endsWith('：');
+        // 检查原始行（或其紧凑版）是否以中文冒号结尾，用于标题判断
+        const ends_with_colon = processed_line_content_compacted.endsWith('：');
 
 
         if (is_two_level_requested) { 
@@ -596,8 +596,8 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
 
             if (ends_with_colon && !is_explicit_l1_input && !is_explicit_l2_input) {
                 // 情况1：以冒号结尾，且没有明确的L1/L2序号，视为标题，不编号。
-                // 输出标准化后的文本（保留冒号，不加句号，内部单空格）
-                result_lines.push(processed_line_content_standardized); 
+                // 输出完全紧凑的原始行内容（保留冒号，不加句号）。
+                result_lines.push(processed_line_content_compacted); 
                 // 标题通常意味着新的一组序号开始，重置计数器
                 current_num_level1 = 1; 
                 current_num_level2 = 1; 
@@ -617,24 +617,22 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
                 current_num_level2++;
                 console.log(`Matched explicit L2 input. Output as NEW L2. Next L1: ${current_num_level1}, Next L2: ${current_num_level2}.`);
             } else {
-                // 情况4：既无明确序号，又不以冒号结尾，则视为新的“一级序号”段落，并赋予（1）（2）...格式
+                // 情况4：既不是标题，又无明确L1/L2序号，则视为新的“一级序号”段落，并赋予（1）（2）...格式
                 result_lines.push(`（${current_num_level1}）${final_content_with_punctuation}`);
                 current_num_level1++;
                 current_num_level2 = 1; // 遇到新的一级序号，二级序号重置
                 console.log(`Unnumbered & no colon. Output as NEW L1. Next L1: ${current_num_level1}, Next L2: ${current_num_level2}.`);
             }
 
-        } else { // 单级序号模式 (level1, level2) 的逻辑，保持不变
-            
+        } else { // 单级序号模式 (level1, level2) 的逻辑
             // 特殊处理单级模式下首行是标题的情况
-            // is_current_line_numbered_any_format 应该基于 original_line 来判断
             const is_current_line_numbered_any_format = LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX.test(original_line) || LEADING_YEAR_PATTERN_REGEX.test(original_line); 
             
             const is_this_line_a_single_level_title_exception = ends_with_colon && !is_current_line_numbered_any_format;
             if (!single_level_first_line_title_exception_applied_for_this_call && is_this_line_a_single_level_title_exception) {
-                result_lines.push(processed_line_content_standardized); // 标题行保持原样（已去多余空格）
+                result_lines.push(processed_line_content_compacted); // 标题行保持原样（已完全紧凑）
                 single_level_first_line_title_exception_applied_for_this_call = true;
-                console.log(`Output as Single-Level Title Exception: "${processed_line_content_standardized}"`);
+                console.log(`Output as Single-Level Title Exception: "${processed_line_content_compacted}"`);
             } else {
                 // 如果不是特殊标题，则正常进行编号和处理
                 if (number_format_type === 'level1') {
@@ -648,7 +646,7 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
                     console.log(`Output as single L2: ${circled_num}.`);
                 } else { 
                     console.warn(`Unexpected number_format_type or unhandled path in single-level mode: ${number_format_type}. Line ${i+1} added as plain: ${original_line}`);
-                    result_lines.push(processed_line_content_standardized);
+                    result_lines.push(processed_line_content_compacted);
                 }
             }
             // 确保在处理完第一个非空行后设置此标志，无论它是否是特殊标题。
@@ -682,19 +680,19 @@ function convert_two_level_numbers(text) {
 
 // 删除序号：移除所有序号和行首空格，并确保每段之间空一行
 function delete_numbers(text) {
-    // 允许空行的功能，但每行的内容仍需标准化空格
+    // 允许空行的功能，但每行的内容仍需彻底紧凑
     let lines = text.split('\n');
     const processed_lines = [];
     for (let line of lines) {
-        // 对当前行进行初步的空格标准化
-        let stripped_line = standardize_internal_whitespace_to_single(line);
+        // 对当前行进行彻底的空白移除
+        let stripped_line = remove_all_internal_whitespace(line);
         if (stripped_line) { // 只处理非空行
-            // 移除序号和行首空格，并确保内容内部单空格化
-            let cleaned_line_content = remove_leading_patterns_and_standardize_spaces_smart(stripped_line);
+            // 移除序号和行首空格，并确保内容完全紧凑
+            let cleaned_line_content = remove_leading_patterns_and_compact_content(stripped_line);
             // 删除序号功能中，不需要句末加句号，也不需要保留冒号，所以直接移除所有常见标点
             cleaned_line_content = cleaned_line_content.replace(/[.,;!?。？！；]/g, ''); 
             // 确保没有多余的空格在句末
-            processed_lines.push(cleaned_line_content.trim());
+            processed_lines.push(cleaned_line_content); // 已经是紧凑的，无需再trim
         }
     }
     // 使用双换行符连接，以在每段之间创建空行 (此功能唯一允许空行的)
@@ -703,19 +701,17 @@ function delete_numbers(text) {
 
 // 加换行符：在每句话末尾添加<br>标签，并保持原有行结构，不处理序号
 function add_br_tags(text) {
-    // 按原始换行符分割，每行的内容标准化空格
+    // 按原始换行符分割
     const lines = text.split('\n'); 
     const result_lines = [];
     for (let line of lines) {
-        // 对当前行进行初步的空格标准化
-        let stripped_line = standardize_internal_whitespace_to_single(line);
-        if (stripped_line) { // 只处理非空行
-            // 此功能不移除行首的序号或前缀，只确保句末有中文句号（或保持冒号），然后追加 <br>
-            // 同时确保内容内部是单空格化
-            let content_for_br = remove_leading_patterns_and_standardize_spaces_smart(stripped_line); 
-            const processed_sentence = standardize_end_punctuation_for_numbered_items(content_for_br); // 确保句末有句号
-            result_lines.push(processed_sentence + '<br>');
+        // 对当前行进行彻底的空白移除和首尾去空
+        let processed_line = remove_all_internal_whitespace(line);
+        if (!processed_line) { // 只处理非空行
+            continue; 
         }
+        // 此功能不移除行首的序号或前缀，不修改句末标点，只在行尾追加 <br>
+        result_lines.push(processed_line + '<br>');
     }
     // 使用原始换行符连接结果，以保持每行之间的换行
     return result_lines.join('\n');
@@ -745,13 +741,12 @@ function smart_process_text(text) {
         // 场景 A: 输入文本含有序号或年份前缀
         // 目标：对全文进行彻底去空格和换行，并根据原有序号（或年份）和句末标点进行分段，保留原有序号/年份，每段独立一行，并确保句末有句号。
         
-        // 1. 将所有非空行合并成一个字符串，并彻底去除所有空白（包括单词间的）
-        // 此处依然使用 remove_all_internal_whitespace，因为此场景是“彻底去空格”后重新分段
+        // 将所有非空行合并成一个字符串，并彻底去除所有空白（包括单词间的）
         let flattened_text_all_whitespace_removed = remove_all_internal_whitespace(
             original_lines.filter(line => line.trim()).map(line => line.trim()).join('')
         );
 
-        // 2. 定义分段的正则表达式。
+        // 定义分段的正则表达式。
         // 分段点：在句号、问号、叹号、分号或冒号之后，如果紧跟着可选空白和一个序号模式（包括年份模式），则在此处分段。
         const smart_segment_split_regex = new RegExp(
             `(?<=[。？！；：])${OPTIONAL_WHITESPACE_STR}(?=${LEADING_NUMBER_PATTERN_BASE}|20\\d{2}[年年度])`, 'g'
@@ -781,11 +776,10 @@ function smart_process_text(text) {
         // 场景 B: 输入文本不含序号或年份前缀
         // 目标：对全文进行彻底去空格和换行，将所有内容合并为一行，不修改标点（因为标点转换已在上一步完成）。
         
-        // 1. 将所有非空行合并成一个字符串，并彻底去除所有空白（包括单词间的）
-        // 此处依然使用 remove_all_internal_whitespace，因为此场景是“彻底去空格”后合并
+        // 将所有非空行合并成一个字符串，并彻底去除所有空白（包括单词间的）
         let full_text_single_line = remove_all_internal_whitespace(original_lines.filter(line => line.trim()).map(line => line.trim()).join(''));
         
-        // 2. 再次确保彻底移除所有剩余的空白
+        // 再次确保彻底移除所有剩余的空白
         let final_text = remove_all_internal_whitespace(full_text_single_line);
         
         return final_text; // 输出为一行
