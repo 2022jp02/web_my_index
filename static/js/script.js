@@ -310,8 +310,9 @@ const OPTIONAL_WHITESPACE_STR = `[${ALL_WHITESPACE_CHARS_SET}]*`;
 // 定义匹配一个或多个这类空白字符的字符串（用于构建正则表达式）
 const MANDATORY_WHITESPACE_STR = `[${ALL_WHITESPACE_CHARS_SET}]+`;
 
-// 全局正则表达式：用于替换一个或多个空白字符为单个空格 (或在某些情况下彻底移除)
+// 全局正则表达式：用于替换一个或多个空白字符为单个空格 (此功能已不常用，但保留)
 const WHITESPACE_TO_SINGLE_SPACE_REGEX = new RegExp(MANDATORY_WHITESPACE_STR, 'g');
+// 全局正则表达式：用于彻底移除所有空白字符
 const WHITESPACE_TO_REMOVE_REGEX_ALL = new RegExp(MANDATORY_WHITESPACE_STR, 'g');
 
 
@@ -360,7 +361,6 @@ const TWO_LEVEL_SPECIFIC_L2_INPUT_PATTERN = /^\s*[\u2460-\u2473\u24EB-\u24F4]/; 
 // 此函数保留，用于需要将连续空白压缩为单个空格的场景 (如快捷复制的文本)。
 function standardize_internal_whitespace_to_single(text) {
     if (!text) return '';
-    // 替换所有连续的空白字符（包括各种Unicode空白）为一个空格，并移除首尾空格
     return text.replace(WHITESPACE_TO_SINGLE_SPACE_REGEX, ' ').trim();
 }
 
@@ -531,11 +531,11 @@ function replaceEnglishPunctuationToChinese(text) {
         converted_segment = converted_segment.replace(/'/g, () => { tempInSingleQuote = !tempInSingleQuote; return tempInSingleQuote ? '‘' : '’'; });
         converted_segment = converted_segment
             .replace(/\./g, '。').replace(/,/g, '，').replace(/:/g, '：').replace(/;/g, '；')
-            .replace(/\?/g, '？').replace(/!/g, '！').replace(/\(/g, '（').replace(/\)/g, '）')
+            .replace(/\?/g, '？').replace(/!/g, '！').replace(/[\(（]/g, '（').replace(/[\)）]/g, '）') // 匹配英文和中文括号
             .replace(/\[/g, '〔').replace(/\]/g, '〕').replace(/\{/g, '｛').replace(/\}/g, '｝')
             .replace(/%/g, '％').replace(/~/g, '～').replace(/\$/g, '＄').replace(/#/g, '＃')
             .replace(/@/g, '＠').replace(/\//g, '／').replace(/\\/g, '＼')
-            .replace(/\^/g, '＾').replace(/\_/g, '＿').replace(/-/g, '－'); 
+            .replace(/\^/g, '＾').replace(/_/g, '＿').replace(/-/g, '－'); 
         
         result_parts.push(converted_segment);
     }
@@ -548,7 +548,7 @@ function replaceEnglishPunctuationToChinese(text) {
 
 // 统一处理带序号列表的辅助函数
 function process_numbered_list(text, number_format_type, is_two_level_requested = false) {
-    // **核心修复：先按原始换行符分割，对每一行进行处理，然后跳过空行。**
+    // **核心修复：首先按原始换行符分割文本。**
     const lines = text.split('\n');
     
     const result_lines = [];
@@ -562,7 +562,7 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
     for (let i = 0; i < lines.length; i++) {
         const original_line = lines[i];
 
-        // 对当前行进行彻底的空白移除和首尾去空。
+        // 对当前行进行彻底的空白移除和首尾去空，得到紧凑的行内容。
         let processed_line_content_compacted = remove_all_internal_whitespace(original_line);
 
         // 如果处理后为空（即原行是空行或仅包含空白字符），则直接跳过，不添加到结果中。
@@ -578,13 +578,14 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
         console.log(`current_num_level1 (before): ${current_num_level1}`);
         console.log(`current_num_level2 (before): ${current_num_level2}`);
 
-        // 获取去除序号且完全紧凑的纯文本内容
+        // 获取去除序号且完全紧凑的纯文本内容。
+        // `remove_leading_patterns_and_compact_content` 会对传入的行再次进行彻底紧凑。
         let content_after_leading_pattern_removal = remove_leading_patterns_and_compact_content(original_line);
         
         // 确保句末标点标准化，这适用于所有最终会被编号的行，或需要标准化的行。
         const final_content_with_punctuation = standardize_end_punctuation_for_numbered_items(content_after_leading_pattern_removal);
         
-        // 检查原始行（或其紧凑版）是否以中文冒号结尾，用于标题判断
+        // 检查原始行的紧凑版是否以中文冒号结尾，用于标题判断。
         const ends_with_colon = processed_line_content_compacted.endsWith('：');
 
 
@@ -625,6 +626,7 @@ function process_numbered_list(text, number_format_type, is_two_level_requested 
             }
 
         } else { // 单级序号模式 (level1, level2) 的逻辑
+            
             // 特殊处理单级模式下首行是标题的情况
             const is_current_line_numbered_any_format = LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX.test(original_line) || LEADING_YEAR_PATTERN_REGEX.test(original_line); 
             
@@ -742,11 +744,12 @@ function smart_process_text(text) {
         // 目标：对全文进行彻底去空格和换行，并根据原有序号（或年份）和句末标点进行分段，保留原有序号/年份，每段独立一行，并确保句末有句号。
         
         // 将所有非空行合并成一个字符串，并彻底去除所有空白（包括单词间的）
+        // 此处依然使用 remove_all_internal_whitespace，因为此场景是“彻底去空格”后重新分段
         let flattened_text_all_whitespace_removed = remove_all_internal_whitespace(
             original_lines.filter(line => line.trim()).map(line => line.trim()).join('')
         );
 
-        // 定义分段的正则表达式。
+        // 2. 定义分段的正则表达式。
         // 分段点：在句号、问号、叹号、分号或冒号之后，如果紧跟着可选空白和一个序号模式（包括年份模式），则在此处分段。
         const smart_segment_split_regex = new RegExp(
             `(?<=[。？！；：])${OPTIONAL_WHITESPACE_STR}(?=${LEADING_NUMBER_PATTERN_BASE}|20\\d{2}[年年度])`, 'g'
