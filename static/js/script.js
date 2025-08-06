@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     try {
         // 关键检查：确保 Bootstrap JavaScript 已经加载并可用
-        if (typeof bootstrap === 'undefined' || typeof bootstrap.Tab === 'undefined' || typeof bootstrap.Toast === 'undefined' || typeof bootstrap.Modal === 'undefined') {
+        if (typeof bootstrap === 'undefined' || typeof bootstrap.Tab === 'undefined' || typeof bootstrap.Tab === 'undefined' || typeof bootstrap.Toast === 'undefined' || typeof bootstrap.Modal === 'undefined') { // 修复了这里重复的Tab检查
             console.error("错误：Bootstrap JavaScript 未加载或初始化成功。请检查 './static/js/bootstrap.bundle.min.js' 路径是否正确且文件未损坏。");
             showNotification("初始化失败：核心组件缺失。请检查浏览器控制台（F12）获取详情。");
             return; // 如果 Bootstrap 未正确加载，则停止进一步的脚本执行
@@ -373,24 +373,24 @@ function remove_all_internal_whitespace(text) {
 
 // 辅助函数：移除行开头可能存在的旧序号和多余空格，并确保内容完全紧凑（无空格）。
 // 特殊处理年份，不移除年份。
-// **FIXED:** 此函数现在将使用 `remove_all_internal_whitespace` 来确保内容中没有空格。
 function remove_leading_patterns_and_compact_content(line) {
+    // **FIXED:** 统一变量名为 currentCompactedLine，并确保所有引用正确
     // 首先对整行进行彻底的内部空格移除和首尾去空
-    let compacted_line = remove_all_internal_whitespace(line); 
-    if (!compated_line) return '';
+    let currentCompactedLine = remove_all_internal_whitespace(line); 
+    if (!currentCompactedLine) return '';
 
     // 尝试匹配行首的年份模式
-    const year_match = compacted_line.match(LEADING_YEAR_PATTERN_REGEX); 
+    const year_match = currentCompactedLine.match(LEADING_YEAR_PATTERN_REGEX); 
     if (year_match) {
         // 如果是年份行，保留年份部分，并处理年份后面的内容
         // year_match[1] 是捕获的年份字符串本身 (如 "2025年")
         // year_match[0].length 是匹配到的完整前缀长度，包括前导和尾随空白
-        let content_after_year = remove_all_internal_whitespace(compated_line.substring(year_match[0].length));
+        let content_after_year = remove_all_internal_whitespace(currentCompactedLine.substring(year_match[0].length));
         return `${year_match[1]}` + (content_after_year ? `${content_after_year}` : ''); // 年份和内容之间不留空格
     }
 
     // 如果不是年份行，则尝试移除其他类型的行首序号
-    let cleaned_line = compacted_line.replace(LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX, '');
+    let cleaned_line = currentCompactedLine.replace(LEADING_NUMBER_PATTERN_WITH_ANCHOR_REGEX, '');
     // 对剩余部分进行内部空格移除和两端去空白
     return remove_all_internal_whitespace(cleaned_line); // 最终彻底紧凑
 }
