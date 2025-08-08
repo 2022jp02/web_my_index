@@ -686,9 +686,13 @@ function delete_numbers(text) {
         if (stripped_line) { // 只处理非空行
             // 移除序号和行首空格，并确保内容完全紧凑
             let cleaned_line_content = remove_leading_patterns_and_compact_content(stripped_line);
-            // 删除序号功能中，不需要句末加句号，也不需要保留冒号，所以直接移除所有常见标点
-            cleaned_line_content = cleaned_line_content.replace(/[.,;!?。？！；]/g, ''); 
-            // 确保没有多余的空格在句末
+
+            // 先将英文标点转换为中文标点，避免英文句号被误移除或不一致
+            cleaned_line_content = replaceEnglishPunctuationToChinese(cleaned_line_content);
+
+            // 保证句末为中文句号（若为冒号则保留冒号）
+            cleaned_line_content = standardize_end_punctuation_for_numbered_items(cleaned_line_content);
+
             processed_lines.push(cleaned_line_content); // 已经是紧凑的，无需再trim
         }
     }
