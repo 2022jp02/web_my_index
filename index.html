@@ -27,10 +27,7 @@
                 <div class="nav flex-column nav-pills" id="v-pills-tab" role="tablist" aria-orientation="vertical">
                     <button class="nav-link active" id="v-pills-level1-tab" data-bs-toggle="pill" data-bs-target="#v-pills-level1" type="button" role="tab" aria-controls="v-pills-level1" aria-selected="true" data-func-id="1">一级序号</button>
                     <button class="nav-link" id="v-pills-level2-tab" data-bs-toggle="pill" data-bs-target="#v-pills-level2" type="button" role="tab" aria-controls="v-pills-level2" aria-selected="false" data-func-id="2">二级序号</button>
-                    <button class="nav-link" id="v-pills-twolevel-tab" data-bs-toggle="pill" data-bs-target="#v-pills-twolevel" type="button" role="tab" aria-controls="v-pills-twolevel" aria-selected="false" data-func-id="3">
-                        两级序号 
-                        <!-- 从导航按钮移除GIF触发器，因为用户要求移到输入框旁 -->
-                    </button>
+                    <button class="nav-link" id="v-pills-twolevel-tab" data-bs-toggle="pill" data-bs-target="#v-pills-twolevel" type="button" role="tab" aria-controls="v-pills-twolevel" aria-selected="false" data-func-id="3">两级序号</button>
                     <button class="nav-link" id="v-pills-delete-tab" data-bs-toggle="pill" data-bs-target="#v-pills-delete" type="button" role="tab" aria-controls="v-pills-delete" aria-selected="false" data-func-id="4">删除序号</button>
                     <button class="nav-link" id="v-pills-addbr-tab" data-bs-toggle="pill" data-bs-target="#v-pills-addbr" type="button" role="tab" aria-controls="v-pills-addbr" aria-selected="false" data-func-id="5">加换行符</button>
                     <!-- "文本分段" 按钮已移除 -->
@@ -45,12 +42,7 @@
                     <!-- Tab 1: 一级序号 -->
                     <div class="tab-pane fade show active" id="v-pills-level1" role="tabpanel" aria-labelledby="v-pills-level1-tab">
                         <div class="mb-3">
-                            <label for="input_text_level1" class="form-label">
-                                请输入或粘贴需要修改的文本 
-                                <span class="text-info gif-trigger" data-gif-src="https://i.ibb.co/ZRM9bmT6/level1-demo.gif">
-                                    ◎ <!-- 移除data-bs-toggle="tooltip"和title -->
-                                </span>
-                            </label>
+                            <label for="input_text_level1" class="form-label">请输入或粘贴需要修改的文本</label>
                             <textarea class="form-control placeholder-text" id="input_text_level1" rows="3" placeholder="将您提供的文本一键转换为（1）（2）…格式"></textarea>
                         </div>
                         <div class="d-flex justify-content-center mb-3">
@@ -70,12 +62,7 @@
                     <!-- Tab 2: 二级序号 -->
                     <div class="tab-pane fade" id="v-pills-level2" role="tabpanel" aria-labelledby="v-pills-level2-tab">
                         <div class="mb-3">
-                            <label for="input_text_level2" class="form-label">
-                                请输入或粘贴需要修改的文本 
-                                <span class="text-info gif-trigger" data-gif-src="https://i.ibb.co/27VKZkGM/level2-demo.gif">
-                                    ◎ <!-- 移除data-bs-toggle="tooltip"和title -->
-                                </span>
-                            </label>
+                            <label for="input_text_level2" class="form-label">请输入或粘贴需要修改的文本</label>
                             <textarea class="form-control placeholder-text" id="input_text_level2" rows="3" placeholder="将您提供的文本一键转换为①②③…格式"></textarea>
                         </div>
                         <div class="d-flex justify-content-center mb-3">
@@ -101,9 +88,6 @@
                                       title="使用两级序号转换功能前，需要先将文本分别在一级序号和二级序号转换完成">
                                     &#x2139; <!-- 信息符号 ℹ -->
                                 </span>
-                                <span class="text-info gif-trigger" data-gif-src="https://i.ibb.co/mrFBBJhT/twolevel-demo.gif">
-                                    ◎ <!-- GIF触发器，不带tooltip -->
-                                </span>
                             </label>
                             <textarea class="form-control placeholder-text" id="input_text_twolevel" rows="3" placeholder="一级序号转换为（1）（2）...格式，二级序号转换为①②...格式"></textarea>
                         </div>
@@ -124,12 +108,7 @@
                     <!-- Tab 4: 删除序号 -->
                     <div class="tab-pane fade" id="v-pills-delete" role="tabpanel" aria-labelledby="v-pills-delete-tab">
                         <div class="mb-3">
-                            <label for="input_text_delete" class="form-label">
-                                请输入或粘贴需要修改的文本
-                                <span class="text-info gif-trigger" data-gif-src="https://i.ibb.co/bM0g9Qxj/delete-demo.gif">
-                                    ◎ <!-- 移除data-bs-toggle="tooltip"和title -->
-                                </span>
-                            </label>
+                            <label for="input_text_delete" class="form-label">请输入或粘贴需要修改的文本</label>
                             <textarea class="form-control placeholder-text" id="input_text_delete" rows="3" placeholder="去掉序号，空一行，转换后可复制粘贴到申报条件整理框里点击一键同步"></textarea>
                         </div>
                         <div class="d-flex justify-content-center mb-3">
@@ -149,12 +128,7 @@
                     <!-- Tab 5: 加换行符 -->
                     <div class="tab-pane fade" id="v-pills-addbr" role="tabpanel" aria-labelledby="v-pills-addbr-tab">
                         <div class="mb-3">
-                            <label for="input_text_addbr" class="form-label">
-                                请输入或粘贴需要修改的文本
-                                <span class="text-info gif-trigger" data-gif-src="https://i.ibb.co/TBybvcWX/addbr-demo.gif">
-                                    ◎ <!-- 移除data-bs-toggle="tooltip"和title -->
-                                </span>
-                            </label>
+                            <label for="input_text_addbr" class="form-label">请输入或粘贴需要修改的文本</label>
                             <textarea class="form-control placeholder-text" id="input_text_addbr" rows="3" placeholder="句末加上&lt;br&gt;标签，转换后可复制粘贴到扶持标准输入框"></textarea>
                         </div>
                         <div class="d-flex justify-content-center mb-3">
@@ -176,10 +150,7 @@
                     <!-- Tab 7: 智能处理 -->
                     <div class="tab-pane fade" id="v-pills-smart" role="tabpanel" aria-labelledby="v-pills-smart-tab">
                         <div class="mb-3">
-                            <label for="input_text_smart" class="form-label">
-                                请输入或粘贴需要清理的文本
-                                <!-- 智能处理功能不再需要GIF触发器 -->
-                            </label>
+                            <label for="input_text_smart" class="form-label">请输入或粘贴需要清理的文本</label>
                             <textarea class="form-control placeholder-text" id="input_text_smart" rows="3" placeholder="删除空格键和换行符；所有的英文标点为中文标点（网址和时间不会转换）；判断用户粘贴的文本有无序号进行智能分段。"></textarea>
                         </div>
                         <div class="d-flex justify-content-center mb-3">
@@ -231,7 +202,7 @@
     <!-- Keyword Alert Modal -->
     <div class="modal fade" id="keywordAlertModal" tabindex="-1" aria-labelledby="keywordAlertModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
+            <div class->
                 <div class="modal-header">
                     <h5 class="modal-title" id="keywordAlertModalLabel">提示</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -244,11 +215,6 @@
                 </div>
             </div>
         </div>
-    </div>
-
-    <!-- GIF Display Container -->
-    <div id="gif-display-container" style="display: none;">
-        <img id="gif-display-image" src="" alt="功能演示" class="img-fluid" style="max-width: 300px;">
     </div>
     
     <!-- Bootstrap JS Bundle with Popper - 指向本地文件 -->
